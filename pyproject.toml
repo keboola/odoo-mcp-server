@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "keboola-odoo-mcp-server"
+version = "0.1.0"
+description = "MCP server for Keboola Odoo ERP with OAuth 2.1 authentication"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Keboola", email = "dev@keboola.com" }
+]
+dependencies = [
+    "mcp>=1.9.4",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "authlib>=1.4.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "playwright>=1.49.0",
+    "respx>=0.22.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[project.scripts]
+odoo-mcp-server = "odoo_mcp_server.server:main"
+odoo-mcp-http = "odoo_mcp_server.http_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/odoo_mcp_server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "oauth: OAuth-related tests",
+    "odoo: Odoo-related tests",
+    "browser: Browser-based tests using Playwright",
+    "live: Tests against live Odoo instance",
+    "claude: Tests for Claude.ai MCP integration",
+    "mcp: MCP protocol tests",
+    "agent_sdk: Agent SDK tests",
+    "employee: Employee self-service tests",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
