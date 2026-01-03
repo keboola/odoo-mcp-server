@@ -509,13 +509,32 @@ async def execute_employee_tool(
 
         employee_name = employees[0]["name"]
 
-        # Find the employee's root directory in DMS
-        root_dirs = await odoo_client.search_read(
+        # Find the employee's directory in DMS
+        # Structure: HR Documents (root) > Employee Name > Category folders
+        # First find the HR Documents root, then find employee folder under it
+        hr_root = await odoo_client.search_read(
             model="dms.directory",
-            domain=[["name", "=", employee_name], ["is_root_directory", "=", True]],
-            fields=["id", "name"],
+            domain=[["name", "=", "HR Documents"], ["is_root_directory", "=", True]],
+            fields=["id"],
             limit=1,
         )
+
+        if hr_root:
+            # Find employee folder under HR Documents
+            root_dirs = await odoo_client.search_read(
+                model="dms.directory",
+                domain=[["name", "=", employee_name], ["parent_id", "=", hr_root[0]["id"]]],
+                fields=["id", "name"],
+                limit=1,
+            )
+        else:
+            # Fallback: try to find employee folder directly (legacy structure)
+            root_dirs = await odoo_client.search_read(
+                model="dms.directory",
+                domain=[["name", "=", employee_name]],
+                fields=["id", "name"],
+                limit=1,
+            )
 
         if not root_dirs:
             return [TextContent(type="text", text=json.dumps({
@@ -576,7 +595,7 @@ async def execute_employee_tool(
         }, default=str))]
 
     elif name == "get_document_categories":
-        # Find the employee's root directory
+        # Find the employee's directory
         employees = await odoo_client.read(
             model="hr.employee",
             ids=[employee_id],
@@ -587,12 +606,28 @@ async def execute_employee_tool(
 
         employee_name = employees[0]["name"]
 
-        root_dirs = await odoo_client.search_read(
+        # Structure: HR Documents (root) > Employee Name > Category folders
+        hr_root = await odoo_client.search_read(
             model="dms.directory",
-            domain=[["name", "=", employee_name], ["is_root_directory", "=", True]],
+            domain=[["name", "=", "HR Documents"], ["is_root_directory", "=", True]],
             fields=["id"],
             limit=1,
         )
+
+        if hr_root:
+            root_dirs = await odoo_client.search_read(
+                model="dms.directory",
+                domain=[["name", "=", employee_name], ["parent_id", "=", hr_root[0]["id"]]],
+                fields=["id"],
+                limit=1,
+            )
+        else:
+            root_dirs = await odoo_client.search_read(
+                model="dms.directory",
+                domain=[["name", "=", employee_name]],
+                fields=["id"],
+                limit=1,
+            )
 
         if not root_dirs:
             return [TextContent(type="text", text=json.dumps({
