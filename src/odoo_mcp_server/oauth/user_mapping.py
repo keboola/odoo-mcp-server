@@ -3,12 +3,40 @@ OAuth User to Odoo Employee Mapping
 
 Maps authenticated OAuth users to their Odoo employee records.
 Uses multiple strategies to find the correct employee.
+
+Performance: Includes in-memory caching to avoid repeated Odoo queries.
 """
 
 import logging
-from typing import Any, Optional
+import time
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Employee cache: email -> (employee_info, expiry_timestamp)
+_employee_cache: dict[str, tuple[dict, float]] = {}
+_EMPLOYEE_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_cached_employee(email: str) -> dict | None:
+    """Get cached employee info if still valid."""
+    email_lower = email.lower()
+    if email_lower in _employee_cache:
+        employee_info, expiry = _employee_cache[email_lower]
+        if time.time() < expiry:
+            logger.debug(f"Employee cache hit for {email_lower}")
+            return employee_info
+        else:
+            del _employee_cache[email_lower]
+    return None
+
+
+def _cache_employee(email: str, employee_info: dict):
+    """Cache employee info."""
+    email_lower = email.lower()
+    expiry = time.time() + _EMPLOYEE_CACHE_TTL
+    _employee_cache[email_lower] = (employee_info, expiry)
+    logger.debug(f"Cached employee info for {email_lower}")
 
 
 class EmployeeNotFoundError(Exception):
@@ -33,6 +61,8 @@ async def get_employee_for_user(
     2. Match via res.users login (which links to hr.employee)
     3. Match by odoo_employee_id claim (if present in token)
 
+    Performance: Uses caching to avoid repeated Odoo queries.
+
     Args:
         oauth_claims: Decoded JWT claims from OAuth token
         odoo_client: Odoo client instance
@@ -46,6 +76,13 @@ async def get_employee_for_user(
     user_email = oauth_claims.get("email") or oauth_claims.get("sub")
     odoo_employee_id = oauth_claims.get("odoo_employee_id")
 
+    # Check cache first (by email)
+    if user_email:
+        cached = _get_cached_employee(user_email)
+        if cached is not None:
+            logger.info(f"Using cached employee mapping for {user_email}")
+            return cached
+
     logger.info(f"Mapping OAuth user to employee: email={user_email}")
 
     # Strategy 0: If token contains employee ID directly (trusted claim)
@@ -58,7 +95,10 @@ async def get_employee_for_user(
         )
         if employees:
             logger.info(f"Found employee by token claim: {employees[0]['name']}")
-            return _normalize_employee(employees[0])
+            result = _normalize_employee(employees[0])
+            if user_email:
+                _cache_employee(user_email, result)
+            return result
 
     if not user_email:
         raise EmployeeNotFoundError("No email in OAuth token to map to employee")
@@ -74,11 +114,15 @@ async def get_employee_for_user(
     if len(employees) > 1:
         logger.warning(f"Multiple employees found for email {user_email}")
         # Use first one but log warning
-        return _normalize_employee(employees[0])
+        result = _normalize_employee(employees[0])
+        _cache_employee(user_email, result)
+        return result
 
     if employees:
         logger.info(f"Found employee by work_email: {employees[0]['name']}")
-        return _normalize_employee(employees[0])
+        result = _normalize_employee(employees[0])
+        _cache_employee(user_email, result)
+        return result
 
     # Strategy 2: Match via res.users (login -> employee_id)
     users = await odoo_client.search_read(
@@ -100,7 +144,9 @@ async def get_employee_for_user(
             )
             if employees:
                 logger.info(f"Found employee via res.users: {employees[0]['name']}")
-                return _normalize_employee(employees[0])
+                result = _normalize_employee(employees[0])
+                _cache_employee(user_email, result)
+                return result
 
         # Check employee_ids (multiple linked employees - rare)
         if user.get("employee_ids") and len(user["employee_ids"]) > 0:
@@ -111,8 +157,11 @@ async def get_employee_for_user(
                 fields=["id", "name", "work_email", "department_id"],
             )
             if employees:
-                logger.info(f"Found employee via res.users employee_ids: {employees[0]['name']}")
-                return _normalize_employee(employees[0])
+                emp_name = employees[0]["name"]
+                logger.info(f"Found employee via res.users employee_ids: {emp_name}")
+                result = _normalize_employee(employees[0])
+                _cache_employee(user_email, result)
+                return result
 
     # Strategy 3: Fuzzy match on name if email has name part (last resort)
     # e.g., "john.doe@company.com" -> search for "john doe"
@@ -125,22 +174,26 @@ async def get_employee_for_user(
             limit=1,
         )
         if employees:
+            emp_name = employees[0]["name"]
             logger.warning(
-                f"Found employee by fuzzy name match: {employees[0]['name']} for {user_email}"
+                f"Found employee by fuzzy name match: {emp_name} for {user_email}"
             )
-            return _normalize_employee(employees[0])
+            result = _normalize_employee(employees[0])
+            _cache_employee(user_email, result)
+            return result
 
     raise EmployeeNotFoundError(f"No employee found for email: {user_email}")
 
 
 def _normalize_employee(employee: dict) -> dict:
     """Normalize employee record to standard format."""
+    dept = employee.get("department_id")
     return {
         "id": employee["id"],
         "name": employee.get("name"),
         "email": employee.get("work_email"),
-        "department_id": employee["department_id"][0] if employee.get("department_id") else None,
-        "department_name": employee["department_id"][1] if employee.get("department_id") else None,
+        "department_id": dept[0] if dept else None,
+        "department_name": dept[1] if dept else None,
     }
 
 

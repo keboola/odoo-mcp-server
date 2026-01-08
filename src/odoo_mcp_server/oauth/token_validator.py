@@ -2,16 +2,59 @@
 JWT Token Validator for OAuth 2.1 Resource Server
 
 Validates access tokens issued by the authorization server.
+
+Performance optimizations:
+- Global PyJWKClient singleton with built-in caching
+- Token validation result cache (TTL-based)
+- Async HTTP client with connection reuse
 """
 
+import hashlib
+import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
-import logging
+from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Global caches for performance
+_jwks_clients: dict[str, Any] = {}  # uri -> PyJWKClient
+_token_cache: dict[str, tuple[dict, float]] = {}  # token_hash -> (claims, expiry)
+_TOKEN_CACHE_TTL = 300  # 5 minutes
+_httpx_client: httpx.AsyncClient | None = None
+
+
+def _get_token_hash(token: str) -> str:
+    """Hash token for cache key (avoid storing raw tokens)."""
+    return hashlib.sha256(token.encode()).hexdigest()[:32]
+
+
+def _get_cached_claims(token: str) -> dict | None:
+    """Get cached token claims if still valid."""
+    token_hash = _get_token_hash(token)
+    if token_hash in _token_cache:
+        claims, expiry = _token_cache[token_hash]
+        if time.time() < expiry:
+            logger.debug(f"Token cache hit for hash {token_hash[:8]}...")
+            return claims
+        else:
+            del _token_cache[token_hash]
+    return None
+
+
+def _cache_claims(token: str, claims: dict):
+    """Cache validated token claims."""
+    token_hash = _get_token_hash(token)
+    # Use token's exp claim if available, otherwise use TTL
+    exp = claims.get("exp")
+    if exp:
+        expiry = min(float(exp), time.time() + _TOKEN_CACHE_TTL)
+    else:
+        expiry = time.time() + _TOKEN_CACHE_TTL
+    _token_cache[token_hash] = (claims, expiry)
+    logger.debug(f"Cached token claims for hash {token_hash[:8]}...")
 
 
 class TokenValidationError(Exception):
@@ -52,13 +95,13 @@ class TokenValidator:
 
     issuer: str
     audience: str
-    jwks_uri: Optional[str] = None
+    jwks_uri: str | None = None
     jwks: dict = field(default_factory=dict)
     _jwks_cache_time: float = field(default=0.0, repr=False)
     _jwks_cache_ttl: int = 3600  # 1 hour
     # Google OAuth specific
     is_google: bool = False
-    authorized_party: Optional[str] = None  # For Google: must match client_id
+    authorized_party: str | None = None  # For Google: must match client_id
 
     def __post_init__(self):
         """Initialize JWKS URI from issuer if not provided."""
@@ -96,6 +139,8 @@ class TokenValidator:
         - JWT id_tokens (3 parts separated by dots)
         - Opaque access_tokens (validated via Google's tokeninfo endpoint)
 
+        Performance: Uses cached results when available.
+
         Args:
             token: Token string (JWT or opaque)
 
@@ -105,6 +150,11 @@ class TokenValidator:
         Raises:
             TokenValidationError: If token is invalid
         """
+        # Check cache first
+        cached = _get_cached_claims(token)
+        if cached is not None:
+            return cached
+
         try:
             import jwt
             from jwt import PyJWKClient
@@ -118,12 +168,21 @@ class TokenValidator:
         if len(parts) != 3:
             # Not a JWT - for Google, validate via tokeninfo endpoint
             if self.is_google:
-                return self._validate_google_access_token(token)
+                claims = self._validate_google_access_token(token)
+                _cache_claims(token, claims)
+                return claims
             raise InvalidTokenError("Invalid JWT format")
 
         try:
-            # Get signing key from JWKS
-            jwks_client = PyJWKClient(self.jwks_uri)
+            # Get or create cached PyJWKClient for this JWKS URI
+            global _jwks_clients
+            if self.jwks_uri not in _jwks_clients:
+                _jwks_clients[self.jwks_uri] = PyJWKClient(
+                    self.jwks_uri,
+                    cache_keys=True,
+                    lifespan=3600  # Cache keys for 1 hour
+                )
+            jwks_client = _jwks_clients[self.jwks_uri]
             signing_key = jwks_client.get_signing_key_from_jwt(token)
 
             # Google ID tokens use client_id as audience
@@ -153,8 +212,10 @@ class TokenValidator:
 
                 # Google tokens should have email_verified
                 if not claims.get("email_verified", False):
-                    logger.warning(f"Google token email not verified: {claims.get('email')}")
+                    email = claims.get("email")
+                    logger.warning(f"Google token email not verified: {email}")
 
+                _cache_claims(token, claims)
                 return claims
             else:
                 # Standard OAuth 2.0 token validation
@@ -172,6 +233,7 @@ class TokenValidator:
                     }
                 )
 
+                _cache_claims(token, claims)
                 return claims
 
         except jwt.ExpiredSignatureError:
@@ -187,10 +249,12 @@ class TokenValidator:
 
     def _validate_google_access_token(self, token: str) -> dict[str, Any]:
         """
-        Validate a Google opaque access token using tokeninfo endpoint.
+        Validate a Google opaque access token using tokeninfo endpoint (sync).
 
         Google access tokens are not JWTs, so we validate them by calling
         Google's tokeninfo endpoint which returns user info if valid.
+
+        Note: Prefer using _validate_google_access_token_async for better performance.
 
         Args:
             token: Google access token (opaque string)
@@ -204,18 +268,17 @@ class TokenValidator:
         import httpx
 
         try:
-            # Call Google's tokeninfo endpoint
-            response = httpx.get(
-                "https://www.googleapis.com/oauth2/v3/tokeninfo",
-                params={"access_token": token},
-                timeout=10.0
-            )
+            # Call Google's tokeninfo endpoint with connection reuse
+            with httpx.Client(timeout=5.0) as client:
+                response = client.get(
+                    "https://www.googleapis.com/oauth2/v3/tokeninfo",
+                    params={"access_token": token},
+                )
 
             if response.status_code != 200:
                 error_data = response.json() if response.text else {}
-                raise InvalidTokenError(
-                    f"Google token validation failed: {error_data.get('error_description', 'Unknown error')}"
-                )
+                err_msg = error_data.get("error_description", "Unknown error")
+                raise InvalidTokenError(f"Google token validation failed: {err_msg}")
 
             claims = response.json()
 
@@ -247,12 +310,89 @@ class TokenValidator:
         except httpx.RequestError as e:
             raise TokenValidationError(f"Failed to validate token with Google: {e}")
 
+    async def _validate_google_access_token_async(self, token: str) -> dict[str, Any]:
+        """
+        Validate a Google opaque access token using tokeninfo endpoint (async).
+
+        Uses a shared AsyncClient for connection reuse and better performance.
+
+        Args:
+            token: Google access token (opaque string)
+
+        Returns:
+            Token claims including email, sub, etc.
+
+        Raises:
+            TokenValidationError: If token is invalid
+        """
+        global _httpx_client
+
+        try:
+            # Get or create shared async client
+            if _httpx_client is None:
+                _httpx_client = httpx.AsyncClient(timeout=5.0)
+
+            response = await _httpx_client.get(
+                "https://www.googleapis.com/oauth2/v3/tokeninfo",
+                params={"access_token": token},
+            )
+
+            if response.status_code != 200:
+                error_data = response.json() if response.text else {}
+                err_msg = error_data.get("error_description", "Unknown error")
+                raise InvalidTokenError(f"Google token validation failed: {err_msg}")
+
+            claims = response.json()
+
+            # Verify audience matches our client_id
+            token_aud = claims.get("aud") or claims.get("azp")
+            if token_aud != self.audience:
+                raise InvalidAudienceError(
+                    f"Invalid audience: expected {self.audience}, got {token_aud}"
+                )
+
+            # Check expiration
+            exp = claims.get("expires_in")
+            if exp is not None and int(exp) <= 0:
+                raise TokenExpiredError("Token has expired")
+
+            # Normalize claims to match JWT format
+            normalized = {
+                "sub": claims.get("sub"),
+                "email": claims.get("email"),
+                "email_verified": claims.get("email_verified") == "true",
+                "aud": token_aud,
+                "iss": "https://accounts.google.com",
+                "scope": claims.get("scope", ""),
+            }
+
+            email = normalized.get("email")
+            logger.info(f"Google access token validated (async) for: {email}")
+            return normalized
+
+        except httpx.RequestError as e:
+            raise TokenValidationError(f"Failed to validate token with Google: {e}")
+
     async def validate_async(self, token: str) -> dict[str, Any]:
         """
         Validate a token asynchronously.
 
-        Fetches JWKS if not cached before validation.
+        Performance: Uses caching and async HTTP client for Google tokens.
         """
+        # Check cache first
+        cached = _get_cached_claims(token)
+        if cached is not None:
+            return cached
+
+        # Check if this is an opaque Google access token (not JWT)
+        parts = token.split(".")
+        if len(parts) != 3 and self.is_google:
+            claims = await self._validate_google_access_token_async(token)
+            _cache_claims(token, claims)
+            return claims
+
+        # For JWT tokens, use sync validation (PyJWT is sync)
+        # The cache check above ensures we don't repeat validation
         await self.fetch_jwks()
         return self.validate(token)
 
