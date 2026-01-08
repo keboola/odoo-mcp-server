@@ -25,18 +25,19 @@ def register_employee_tools():
     return EMPLOYEE_TOOLS
 
 
-async def execute_tool(name: str, arguments: dict, odoo_client):
+async def execute_tool(name: str, arguments: dict, odoo_client):  # type: ignore[type-arg]
     """
-    Execute a tool by name.
+    Execute a tool by name (CRUD tools only).
 
-    Dispatches to the appropriate tool executor based on tool name.
+    Employee tools require employee context and should be called via
+    execute_employee_tool directly with the employee_id parameter.
     """
-    # Check employee tools first
+    # Employee tools require employee context - raise error
     employee_tool_names = [t.name for t in EMPLOYEE_TOOLS]
     if name in employee_tool_names:
-        return await execute_employee_tool(name, arguments, odoo_client)
+        raise ValueError(f"Employee tool '{name}' requires employee context. Use execute_employee_tool instead.")
 
-    # Fall back to CRUD tools
+    # Execute CRUD tools
     crud_tool_names = [t.name for t in CRUD_TOOLS]
     if name in crud_tool_names:
         return await execute_crud_tool(name, arguments, odoo_client)

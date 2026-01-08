@@ -145,7 +145,7 @@ class OdooClient:
         order: str | None = None
     ) -> list[dict]:
         """Search and read records"""
-        kwargs = {"limit": limit, "offset": offset}
+        kwargs: dict[str, Any] = {"limit": limit, "offset": offset}
         if fields:
             kwargs["fields"] = fields
         if order:

@@ -114,6 +114,8 @@ class OAuthResourceServer:
     @property
     def metadata(self) -> ProtectedResourceMetadata:
         """Get protected resource metadata."""
+        if not self._metadata:
+            raise RuntimeError("Metadata not initialized")
         return self._metadata
 
     @property

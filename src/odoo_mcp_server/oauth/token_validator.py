@@ -123,6 +123,9 @@ class TokenValidator:
         if self.jwks and (now - self._jwks_cache_time) < self._jwks_cache_ttl:
             return self.jwks
 
+        if not self.jwks_uri:
+            raise TokenValidationError("JWKS URI not configured")
+
         async with httpx.AsyncClient() as client:
             response = await client.get(self.jwks_uri)
             response.raise_for_status()
@@ -174,6 +177,10 @@ class TokenValidator:
             raise InvalidTokenError("Invalid JWT format")
 
         try:
+            # Ensure JWKS URI is configured
+            if not self.jwks_uri:
+                raise TokenValidationError("JWKS URI not configured")
+
             # Get or create cached PyJWKClient for this JWKS URI
             global _jwks_clients
             if self.jwks_uri not in _jwks_clients:

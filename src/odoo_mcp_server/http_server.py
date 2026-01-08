@@ -199,7 +199,7 @@ async def oauth_protected_resource_metadata():
 
 
 @app.get("/callback")
-async def oauth_callback(code: str = None, state: str = None, error: str = None):
+async def oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     """OAuth authorization code callback."""
     if error:
         return HTMLResponse(
