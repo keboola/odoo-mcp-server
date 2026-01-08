@@ -2,7 +2,6 @@
 
 from pydantic_settings import BaseSettings
 
-
 # =============================================================================
 # OAuth Scope Definitions (Feedback 4.1 - Granular Scopes)
 # =============================================================================
@@ -19,6 +18,7 @@ OAUTH_SCOPES = {
 
     # HR/Employee-specific scopes (granular access)
     "odoo.hr.profile": "Read own employee profile",
+    "odoo.hr.profile.write": "Update own employee contact information",
     "odoo.hr.team": "Read team/department members",
     "odoo.hr.directory": "Search employee directory",
 
@@ -39,18 +39,22 @@ TOOL_SCOPE_REQUIREMENTS = {
     "get_my_manager": ["odoo.hr.profile", "odoo.read"],
     "get_my_team": ["odoo.hr.team", "odoo.read"],
     "find_colleague": ["odoo.hr.directory", "odoo.read"],
+    "get_direct_reports": ["odoo.hr.team", "odoo.read"],
+    "update_my_contact": ["odoo.hr.profile.write", "odoo.write"],
 
     # Leave tools (Employee Self-Service)
     "get_my_leave_balance": ["odoo.leave.read", "odoo.read"],
     "get_my_leave_requests": ["odoo.leave.read", "odoo.read"],
     "request_leave": ["odoo.leave.write", "odoo.write"],
     "cancel_leave_request": ["odoo.leave.write", "odoo.write"],
+    "get_public_holidays": ["odoo.leave.read", "odoo.read"],
 
     # Document tools (Employee Self-Service)
     "get_my_documents": ["odoo.documents.read", "odoo.read"],
     "get_document_categories": ["odoo.documents.read", "odoo.read"],
     "upload_identity_document": ["odoo.documents.write", "odoo.write"],
     "download_document": ["odoo.documents.read", "odoo.read"],
+    "get_document_details": ["odoo.documents.read", "odoo.read"],
 
     # Generic CRUD tools (Admin only - requires odoo.write for most operations)
     "search_records": ["odoo.read"],
@@ -77,6 +81,7 @@ WRITE_TOOLS = [
     "request_leave",
     "cancel_leave_request",
     "upload_identity_document",
+    "update_my_contact",
     "create_record",
     "update_record",
     "delete_record",

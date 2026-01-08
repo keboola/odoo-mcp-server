@@ -5,10 +5,10 @@ MCP tools for creating, reading, updating, and deleting Odoo records.
 """
 import json
 from typing import Any
-from mcp.types import Tool, TextContent
+
+from mcp.types import TextContent, Tool
 
 from ..odoo.client import OdooClient
-
 
 TOOLS = [
     Tool(
@@ -221,5 +221,5 @@ async def execute_tool(
             limit=100
         )
         return [TextContent(type="text", text=json.dumps(models, default=str))]
-        
+
     raise ValueError(f"Unknown tool: {name}")

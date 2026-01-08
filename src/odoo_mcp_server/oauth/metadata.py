@@ -5,7 +5,6 @@ Implements the Protected Resource Metadata endpoint for OAuth 2.1 resource serve
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -32,7 +31,7 @@ class ProtectedResourceMetadata:
     )
 
     # Optional: Resource documentation URL
-    resource_documentation: Optional[str] = None
+    resource_documentation: str | None = None
 
     # Optional: Additional resource metadata
     resource_signing_alg_values_supported: list[str] = field(

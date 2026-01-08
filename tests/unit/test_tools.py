@@ -229,3 +229,137 @@ class TestToolDescriptions:
             assert name == name.lower()
             assert " " not in name
             assert "-" not in name
+
+
+class TestEmployeeToolSchemas:
+    """Tests for employee self-service tool schemas."""
+
+    def test_employee_tools_count(self):
+        """Verify expected number of employee tools."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        # 4 profile + 2 new profile + 5 leave + 1 new leave + 4 documents + 1 new document = 17
+        assert len(EMPLOYEE_TOOLS) == 16
+
+    def test_get_direct_reports_schema(self):
+        """get_direct_reports should have no required fields."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        tool = next((t for t in EMPLOYEE_TOOLS if t.name == "get_direct_reports"), None)
+        assert tool is not None
+        assert tool.inputSchema["type"] == "object"
+        assert "required" not in tool.inputSchema or len(tool.inputSchema.get("required", [])) == 0
+
+    def test_update_my_contact_schema(self):
+        """update_my_contact should have optional phone and email fields."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        tool = next((t for t in EMPLOYEE_TOOLS if t.name == "update_my_contact"), None)
+        assert tool is not None
+        assert "work_phone" in tool.inputSchema["properties"]
+        assert "mobile_phone" in tool.inputSchema["properties"]
+        assert "work_email" in tool.inputSchema["properties"]
+        # All fields are optional
+        assert "required" not in tool.inputSchema or len(tool.inputSchema.get("required", [])) == 0
+
+    def test_get_public_holidays_schema(self):
+        """get_public_holidays should have optional year field."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        tool = next((t for t in EMPLOYEE_TOOLS if t.name == "get_public_holidays"), None)
+        assert tool is not None
+        assert "year" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["year"]["type"] == "integer"
+
+    def test_get_document_details_schema(self):
+        """get_document_details should require document_id."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        tool = next((t for t in EMPLOYEE_TOOLS if t.name == "get_document_details"), None)
+        assert tool is not None
+        assert "document_id" in tool.inputSchema["properties"]
+        assert "document_id" in tool.inputSchema["required"]
+
+    def test_all_employee_tools_have_descriptions(self):
+        """All employee tools should have non-empty descriptions."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        for tool in EMPLOYEE_TOOLS:
+            assert tool.description, f"Tool {tool.name} missing description"
+            assert len(tool.description) > 10, f"Tool {tool.name} has too short description"
+
+    def test_employee_tool_names_are_snake_case(self):
+        """Employee tool names should be in snake_case."""
+        from odoo_mcp_server.tools.employee import EMPLOYEE_TOOLS
+
+        for tool in EMPLOYEE_TOOLS:
+            assert tool.name == tool.name.lower(), f"Tool {tool.name} not lowercase"
+            assert " " not in tool.name, f"Tool {tool.name} has spaces"
+            assert "-" not in tool.name, f"Tool {tool.name} has dashes"
+
+
+class TestEmployeeToolConfig:
+    """Tests for employee tool configuration."""
+
+    def test_new_tools_have_scope_requirements(self):
+        """New tools should have scope requirements in config."""
+        from odoo_mcp_server.config import TOOL_SCOPE_REQUIREMENTS
+
+        new_tools = [
+            "get_direct_reports",
+            "update_my_contact",
+            "get_public_holidays",
+            "get_document_details",
+        ]
+
+        for tool_name in new_tools:
+            assert tool_name in TOOL_SCOPE_REQUIREMENTS, f"Missing scope for {tool_name}"
+            assert len(TOOL_SCOPE_REQUIREMENTS[tool_name]) > 0, f"Empty scope for {tool_name}"
+
+    def test_update_my_contact_is_write_tool(self):
+        """update_my_contact should be classified as a write tool."""
+        from odoo_mcp_server.config import WRITE_TOOLS
+
+        assert "update_my_contact" in WRITE_TOOLS
+
+    def test_new_profile_write_scope_exists(self):
+        """odoo.hr.profile.write scope should be defined."""
+        from odoo_mcp_server.config import OAUTH_SCOPES
+
+        assert "odoo.hr.profile.write" in OAUTH_SCOPES
+
+
+class TestEmployeeFieldSecurity:
+    """Tests for employee field security constants."""
+
+    def test_public_fields_defined(self):
+        """Public employee fields should be defined."""
+        from odoo_mcp_server.tools.employee import PUBLIC_EMPLOYEE_FIELDS
+
+        assert "name" in PUBLIC_EMPLOYEE_FIELDS
+        assert "work_email" in PUBLIC_EMPLOYEE_FIELDS
+        assert "department_id" in PUBLIC_EMPLOYEE_FIELDS
+
+    def test_self_fields_include_public(self):
+        """Self employee fields should include all public fields."""
+        from odoo_mcp_server.tools.employee import (
+            PUBLIC_EMPLOYEE_FIELDS,
+            SELF_EMPLOYEE_FIELDS,
+        )
+
+        for field in PUBLIC_EMPLOYEE_FIELDS:
+            assert field in SELF_EMPLOYEE_FIELDS
+
+    def test_restricted_folders_defined(self):
+        """DMS restricted folders should be defined."""
+        from odoo_mcp_server.tools.employee import DMS_RESTRICTED_FOLDERS
+
+        assert "Background Checks" in DMS_RESTRICTED_FOLDERS
+        assert "Offboarding Documents" in DMS_RESTRICTED_FOLDERS
+
+    def test_allowed_folders_defined(self):
+        """DMS allowed folders should be defined."""
+        from odoo_mcp_server.tools.employee import DMS_ALLOWED_FOLDERS
+
+        assert "Contracts" in DMS_ALLOWED_FOLDERS
+        assert "Identity" in DMS_ALLOWED_FOLDERS

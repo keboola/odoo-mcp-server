@@ -5,15 +5,16 @@ Provides FastAPI middleware for OAuth token validation and user context extracti
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from .token_validator import TokenValidator, TokenValidationError
 from .metadata import ProtectedResourceMetadata
+from .token_validator import TokenValidationError, TokenValidator
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +94,8 @@ class OAuthResourceServer:
     scopes_supported: list[str] = field(default_factory=list)
 
     # Internal components
-    _validator: Optional[TokenValidator] = field(default=None, repr=False)
-    _metadata: Optional[ProtectedResourceMetadata] = field(default=None, repr=False)
+    _validator: TokenValidator | None = field(default=None, repr=False)
+    _metadata: ProtectedResourceMetadata | None = field(default=None, repr=False)
 
     def __post_init__(self):
         """Initialize internal components."""
@@ -142,8 +143,8 @@ class OAuthMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        resource_server: Optional[OAuthResourceServer] = None,
-        exclude_paths: Optional[list[str]] = None,
+        resource_server: OAuthResourceServer | None = None,
+        exclude_paths: list[str] | None = None,
         dev_mode: bool = False,
     ):
         """
@@ -164,7 +165,7 @@ class OAuthMiddleware(BaseHTTPMiddleware):
         ]
         self.dev_mode = dev_mode
 
-    def _extract_token(self, request: Request) -> Optional[str]:
+    def _extract_token(self, request: Request) -> str | None:
         """Extract Bearer token from Authorization header."""
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -245,7 +246,7 @@ def require_scopes(*required_scopes: str):
         async def get_profile(user: dict = Depends(require_scopes("odoo.hr.profile"))):
             ...
     """
-    from fastapi import Depends, HTTPException, Request
+    from fastapi import HTTPException, Request
 
     async def dependency(request: Request) -> dict:
         user = getattr(request.state, "user", None)

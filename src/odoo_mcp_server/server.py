@@ -10,12 +10,19 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
-from mcp.types import Tool, TextContent, Resource, ServerCapabilities, ToolsCapability, ResourcesCapability
+from mcp.types import (
+    Resource,
+    ResourcesCapability,
+    ServerCapabilities,
+    TextContent,
+    Tool,
+    ToolsCapability,
+)
 
 from .config import Settings
 from .odoo.client import OdooClient
-from .tools import register_tools
 from .resources import register_resources
+from .tools import register_tools
 
 logger = logging.getLogger(__name__)
 

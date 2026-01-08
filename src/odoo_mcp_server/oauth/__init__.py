@@ -1,9 +1,9 @@
 """OAuth 2.1 Resource Server implementation."""
 
-from .resource_server import OAuthResourceServer, OAuthMiddleware, extract_user_context
-from .token_validator import TokenValidator
 from .metadata import ProtectedResourceMetadata
-from .user_mapping import get_employee_for_user, EmployeeNotFoundError
+from .resource_server import OAuthMiddleware, OAuthResourceServer, extract_user_context
+from .token_validator import TokenValidator
+from .user_mapping import EmployeeNotFoundError, get_employee_for_user
 
 __all__ = [
     "OAuthResourceServer",

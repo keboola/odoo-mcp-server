@@ -5,7 +5,6 @@ Handles communication with Odoo ERP instance.
 Includes async-safe operations and error handling.
 """
 import asyncio
-import socket
 import xmlrpc.client
 from functools import partial
 from typing import Any
@@ -13,7 +12,6 @@ from xmlrpc.client import Fault
 
 from .exceptions import (
     OdooAuthenticationError,
-    OdooError,
     map_connection_error,
     map_odoo_fault,
 )
@@ -69,7 +67,7 @@ class OdooClient:
             )
         except Fault as e:
             raise map_odoo_fault(e) from e
-        except (socket.timeout, ConnectionError, OSError) as e:
+        except (TimeoutError, ConnectionError, OSError) as e:
             raise map_connection_error(e) from e
 
     async def get_version(self) -> dict:

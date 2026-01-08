@@ -43,6 +43,33 @@ EMPLOYEE_TOOLS = [
             "required": ["name"],
         },
     ),
+    Tool(
+        name="get_direct_reports",
+        description="Get employees who report directly to you (for managers). Returns empty list if you're not a manager.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="update_my_contact",
+        description="Update your contact information (work phone, mobile phone, or work email)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "work_phone": {
+                    "type": "string",
+                    "description": "Work phone number",
+                },
+                "mobile_phone": {
+                    "type": "string",
+                    "description": "Mobile phone number",
+                },
+                "work_email": {
+                    "type": "string",
+                    "format": "email",
+                    "description": "Work email address",
+                },
+            },
+        },
+    ),
     # === Time Off / Leave ===
     Tool(
         name="get_my_leave_balance",
@@ -114,6 +141,19 @@ EMPLOYEE_TOOLS = [
             "required": ["request_id"],
         },
     ),
+    Tool(
+        name="get_public_holidays",
+        description="Get company public holidays for a specific year",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "year": {
+                    "type": "integer",
+                    "description": "Year to get holidays for (default: current year)",
+                }
+            },
+        },
+    ),
     # === Documents (DMS) ===
     Tool(
         name="get_my_documents",
@@ -167,6 +207,20 @@ EMPLOYEE_TOOLS = [
                 "document_id": {
                     "type": "integer",
                     "description": "ID of the document to download",
+                }
+            },
+            "required": ["document_id"],
+        },
+    ),
+    Tool(
+        name="get_document_details",
+        description="Get detailed metadata for a specific document (without downloading content)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {
+                    "type": "integer",
+                    "description": "ID of the document",
                 }
             },
             "required": ["document_id"],
@@ -349,6 +403,86 @@ async def execute_employee_tool(
         ]
         return [TextContent(type="text", text=json.dumps(result, default=str))]
 
+    elif name == "get_direct_reports":
+        # Find employees who have this employee as their manager (parent_id)
+        direct_reports = await odoo_client.search_read(
+            model="hr.employee",
+            domain=[["parent_id", "=", employee_id]],
+            fields=["name", "work_email", "mobile_phone", "department_id", "job_title"],
+            limit=50,
+        )
+
+        result = [
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "email": r.get("work_email"),
+                "phone": r.get("mobile_phone"),
+                "department": r.get("department_id", [None, None])[1] if r.get("department_id") else None,
+                "job_title": r.get("job_title"),
+            }
+            for r in direct_reports
+        ]
+
+        return [TextContent(type="text", text=json.dumps({
+            "direct_reports": result,
+            "count": len(result),
+            "message": "You have no direct reports" if not result else None,
+        }, default=str))]
+
+    elif name == "update_my_contact":
+        import re
+
+        # Get the fields to update
+        updates = {}
+
+        if "work_phone" in arguments and arguments["work_phone"]:
+            updates["work_phone"] = arguments["work_phone"]
+
+        if "mobile_phone" in arguments and arguments["mobile_phone"]:
+            updates["mobile_phone"] = arguments["mobile_phone"]
+
+        if "work_email" in arguments and arguments["work_email"]:
+            email = arguments["work_email"]
+            # Basic email validation
+            if not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
+                return [TextContent(type="text", text=json.dumps({"error": "Invalid email format"}))]
+            updates["work_email"] = email
+
+        if not updates:
+            return [TextContent(type="text", text=json.dumps({
+                "error": "No fields to update. Provide work_phone, mobile_phone, or work_email."
+            }))]
+
+        # Update the employee record
+        await odoo_client.write(
+            model="hr.employee",
+            ids=[employee_id],
+            values=updates,
+        )
+
+        # Return the updated profile
+        employees = await odoo_client.read(
+            model="hr.employee",
+            ids=[employee_id],
+            fields=["name", "work_email", "mobile_phone", "work_phone"],
+        )
+
+        if employees:
+            emp = employees[0]
+            return [TextContent(type="text", text=json.dumps({
+                "status": "updated",
+                "updated_fields": list(updates.keys()),
+                "profile": {
+                    "name": emp.get("name"),
+                    "work_email": emp.get("work_email"),
+                    "mobile_phone": emp.get("mobile_phone"),
+                    "work_phone": emp.get("work_phone"),
+                },
+            }, default=str))]
+
+        return [TextContent(type="text", text=json.dumps({"status": "updated", "updated_fields": list(updates.keys())}))]
+
     # === Time Off / Leave ===
 
     elif name == "get_my_leave_balance":
@@ -491,6 +625,40 @@ async def execute_employee_tool(
         await odoo_client.unlink(model="hr.leave", ids=[request_id])
 
         return [TextContent(type="text", text=json.dumps({"status": "cancelled", "message": "Leave request cancelled"}))]
+
+    elif name == "get_public_holidays":
+        year = arguments.get("year", date.today().year)
+
+        # Public holidays in Odoo are stored as resource.calendar.leaves
+        # with resource_id = False (global/company-wide holidays)
+        start_date = f"{year}-01-01"
+        end_date = f"{year}-12-31"
+
+        holidays = await odoo_client.search_read(
+            model="resource.calendar.leaves",
+            domain=[
+                ["resource_id", "=", False],  # Global holidays (not employee-specific)
+                ["date_from", ">=", start_date],
+                ["date_to", "<=", f"{end_date} 23:59:59"],
+            ],
+            fields=["name", "date_from", "date_to"],
+            order="date_from asc",
+        )
+
+        result = [
+            {
+                "name": h.get("name"),
+                "date_from": h.get("date_from"),
+                "date_to": h.get("date_to"),
+            }
+            for h in holidays
+        ]
+
+        return [TextContent(type="text", text=json.dumps({
+            "year": year,
+            "holidays": result,
+            "count": len(result),
+        }, default=str))]
 
     # === Documents (DMS) ===
 
@@ -779,6 +947,73 @@ async def execute_employee_tool(
             "filename": file["name"],
             "mimetype": file.get("mimetype"),
             "content_base64": file.get("content"),
+        }, default=str))]
+
+    elif name == "get_document_details":
+        document_id = arguments["document_id"]
+
+        # Get the file metadata (without content)
+        files = await odoo_client.search_read(
+            model="dms.file",
+            domain=[["id", "=", document_id]],
+            fields=["id", "name", "directory_id", "mimetype", "size", "create_date", "create_uid", "write_date"],
+            limit=1,
+        )
+
+        if not files:
+            return [TextContent(type="text", text=json.dumps({"error": "Document not found"}))]
+
+        file = files[0]
+        directory_id = file["directory_id"][0] if file.get("directory_id") else None
+
+        # Verify this file belongs to the employee's accessible folders
+        employees = await odoo_client.read(
+            model="hr.employee",
+            ids=[employee_id],
+            fields=["name"],
+        )
+        if not employees:
+            return [TextContent(type="text", text=json.dumps({"error": "Employee not found"}))]
+
+        employee_name = employees[0]["name"]
+        category_name = None
+
+        # Get the directory hierarchy to verify ownership and get category
+        if directory_id:
+            directory = await odoo_client.read(
+                model="dms.directory",
+                ids=[directory_id],
+                fields=["name", "parent_id"],
+            )
+
+            if directory:
+                dir_info = directory[0]
+                category_name = dir_info.get("name")
+
+                # Check if this is a restricted folder
+                if category_name in DMS_RESTRICTED_FOLDERS:
+                    return [TextContent(type="text", text=json.dumps({"error": "Access denied to restricted folder"}))]
+
+                # Verify parent is employee's root folder
+                parent_id = dir_info.get("parent_id", [None])[0] if dir_info.get("parent_id") else None
+                if parent_id:
+                    parent_dir = await odoo_client.read(
+                        model="dms.directory",
+                        ids=[parent_id],
+                        fields=["name"],
+                    )
+                    if parent_dir and parent_dir[0].get("name") != employee_name:
+                        return [TextContent(type="text", text=json.dumps({"error": "Access denied - not your document"}))]
+
+        return [TextContent(type="text", text=json.dumps({
+            "id": file["id"],
+            "filename": file["name"],
+            "category": category_name,
+            "mimetype": file.get("mimetype"),
+            "size_bytes": file.get("size"),
+            "created_at": file.get("create_date"),
+            "created_by": file.get("create_uid", [None, None])[1] if file.get("create_uid") else None,
+            "modified_at": file.get("write_date"),
         }, default=str))]
 
     else:

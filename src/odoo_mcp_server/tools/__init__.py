@@ -1,9 +1,8 @@
 """MCP tools for Odoo operations."""
 
+from .employee import EMPLOYEE_TOOLS, execute_employee_tool
 from .records import TOOLS as CRUD_TOOLS
 from .records import execute_tool as execute_crud_tool
-from .employee import EMPLOYEE_TOOLS
-from .employee import execute_employee_tool
 
 __all__ = [
     "CRUD_TOOLS",

@@ -7,8 +7,9 @@ They WILL FAIL until the implementation is complete.
 Run with: pytest tests/unit/test_oauth_resource_server.py -v
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 pytestmark = [pytest.mark.unit, pytest.mark.oauth]
 
@@ -261,7 +262,7 @@ class TestScopeEnforcement:
         """
         EXPECTED: Access granted when user has required scope.
         """
-        from odoo_mcp_server.config import check_scope_access, TOOL_SCOPE_REQUIREMENTS
+        from odoo_mcp_server.config import TOOL_SCOPE_REQUIREMENTS, check_scope_access
 
         user_scopes = ["openid", "odoo.hr.profile"]
         required = TOOL_SCOPE_REQUIREMENTS["get_my_profile"]
@@ -272,7 +273,7 @@ class TestScopeEnforcement:
         """
         EXPECTED: Access denied when user lacks required scope.
         """
-        from odoo_mcp_server.config import check_scope_access, TOOL_SCOPE_REQUIREMENTS
+        from odoo_mcp_server.config import TOOL_SCOPE_REQUIREMENTS, check_scope_access
 
         user_scopes = ["openid"]  # Missing odoo.hr.profile
         required = TOOL_SCOPE_REQUIREMENTS["get_my_profile"]
@@ -283,7 +284,7 @@ class TestScopeEnforcement:
         """
         EXPECTED: odoo.read scope grants access to all read tools.
         """
-        from odoo_mcp_server.config import check_scope_access, TOOL_SCOPE_REQUIREMENTS
+        from odoo_mcp_server.config import TOOL_SCOPE_REQUIREMENTS, check_scope_access
 
         user_scopes = ["openid", "odoo.read"]
 

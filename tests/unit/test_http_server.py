@@ -51,6 +51,7 @@ class TestHTTPServerEndpoints:
     def client(self):
         """Create test client for HTTP server."""
         from fastapi.testclient import TestClient
+
         from odoo_mcp_server.http_server import app
 
         return TestClient(app)
@@ -128,6 +129,7 @@ class TestHTTPServerMCPProtocol:
     def authenticated_client(self):
         """Create test client with mocked authentication."""
         from fastapi.testclient import TestClient
+
         from odoo_mcp_server.http_server import app
 
         client = TestClient(app)

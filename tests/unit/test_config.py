@@ -4,7 +4,6 @@ Unit tests for configuration module.
 Run with: pytest tests/unit/test_config.py -v -m unit
 """
 
-import os
 import pytest
 
 pytestmark = [pytest.mark.unit]

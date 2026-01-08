@@ -8,7 +8,7 @@ and test data management.
 import asyncio
 import json
 import os
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
