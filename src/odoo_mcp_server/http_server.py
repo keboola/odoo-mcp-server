@@ -7,32 +7,29 @@ Provides HTTP transport for MCP protocol with OAuth authentication.
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from .config import Settings, OAUTH_SCOPES, TOOL_SCOPE_REQUIREMENTS, check_scope_access
-from .odoo.client import OdooClient
-from .tools import register_tools, execute_tool
-from .resources import register_resources, read_resource
+from .config import OAUTH_SCOPES, TOOL_SCOPE_REQUIREMENTS, Settings, check_scope_access
 from .oauth.resource_server import (
     OAuthResourceServer,
-    OAuthMiddleware,
     extract_user_context,
-    require_scopes,
 )
-from .oauth.metadata import ProtectedResourceMetadata
-from .oauth.user_mapping import get_employee_for_user, EmployeeNotFoundError
-from .tools.employee import execute_employee_tool, EMPLOYEE_TOOLS
+from .oauth.user_mapping import EmployeeNotFoundError, get_employee_for_user
+from .odoo.client import OdooClient
+from .resources import read_resource, register_resources
+from .tools import execute_tool, register_tools
+from .tools.employee import EMPLOYEE_TOOLS, execute_employee_tool
 
 logger = logging.getLogger(__name__)
 
 # Global state
 settings = Settings()
-odoo_client: Optional[OdooClient] = None
+odoo_client: OdooClient | None = None
 
 
 def _get_oauth_audience() -> str:
@@ -218,13 +215,13 @@ async def oauth_callback(code: str = None, state: str = None, error: str = None)
             <h1>Authorization Successful</h1>
             <p>You can close this window and return to the application.</p>
             <script>
-                if (window.opener) {
-                    window.opener.postMessage({type: 'oauth_callback', code: '%s', state: '%s'}, '*');
-                }
+                if (window.opener) {{
+                    window.opener.postMessage({{type: 'oauth_callback', code: '{}', state: '{}'}}, '*');
+                }}
             </script>
             </body>
             </html>
-            """ % (code, state or ""),
+            """.format(code, state or ""),
             status_code=200,
         )
 
@@ -244,17 +241,17 @@ class MCPRequest(BaseModel):
 
     jsonrpc: str = "2.0"
     method: str
-    params: Optional[dict[str, Any]] = None
-    id: Optional[int | str] = None
+    params: dict[str, Any] | None = None
+    id: int | str | None = None
 
 
 class MCPResponse(BaseModel):
     """MCP JSON-RPC response."""
 
     jsonrpc: str = "2.0"
-    result: Optional[Any] = None
-    error: Optional[dict[str, Any]] = None
-    id: Optional[int | str] = None
+    result: Any | None = None
+    error: dict[str, Any] | None = None
+    id: int | str | None = None
 
 
 @app.get("/mcp")
@@ -266,7 +263,6 @@ async def mcp_sse_endpoint(request: Request):
     For now, we just keep the connection alive with periodic heartbeats.
     """
     from starlette.responses import StreamingResponse
-    import asyncio
 
     user = getattr(request.state, "user", None)
     if not user:
@@ -275,7 +271,7 @@ async def mcp_sse_endpoint(request: Request):
     async def event_generator():
         """Generate SSE events."""
         # Send initial connection established event
-        yield f"data: {{}}\n\n"
+        yield "data: {}\n\n"
 
         # Keep connection alive with heartbeats
         while True:

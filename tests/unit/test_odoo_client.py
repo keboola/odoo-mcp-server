@@ -5,7 +5,7 @@ Run with: pytest tests/unit/test_odoo_client.py -v -m unit
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from xmlrpc.client import Fault
 
 import pytest
@@ -23,7 +23,10 @@ class TestOdooErrorHandling:
 
     def test_access_denied_error_mapping(self):
         """AccessDenied fault should map to AuthenticationError."""
-        from odoo_mcp_server.odoo.exceptions import OdooAuthenticationError, map_odoo_fault
+        from odoo_mcp_server.odoo.exceptions import (
+            OdooAuthenticationError,
+            map_odoo_fault,
+        )
 
         fault = Fault(3, "Access Denied")
         error = map_odoo_fault(fault)
@@ -45,7 +48,10 @@ class TestOdooErrorHandling:
 
     def test_missing_error_mapping(self):
         """MissingError fault should map to OdooRecordNotFoundError."""
-        from odoo_mcp_server.odoo.exceptions import OdooRecordNotFoundError, map_odoo_fault
+        from odoo_mcp_server.odoo.exceptions import (
+            OdooRecordNotFoundError,
+            map_odoo_fault,
+        )
 
         fault = Fault(2, "MissingError: Record does not exist")
         error = map_odoo_fault(fault)
@@ -75,10 +81,12 @@ class TestOdooErrorHandling:
 
     def test_connection_error_mapping(self):
         """Connection errors should map to OdooConnectionError."""
-        from odoo_mcp_server.odoo.exceptions import OdooConnectionError, map_connection_error
 
-        import socket
-        error = map_connection_error(socket.timeout("Connection timed out"))
+        from odoo_mcp_server.odoo.exceptions import (
+            OdooConnectionError,
+            map_connection_error,
+        )
+        error = map_connection_error(TimeoutError("Connection timed out"))
 
         assert isinstance(error, OdooConnectionError)
         assert error.error_code == "CONNECTION_TIMEOUT"
@@ -131,7 +139,6 @@ class TestOdooClientConcurrency:
 
         # Mock the XML-RPC calls
         call_count = 0
-        original_run = client._run_in_executor
 
         async def mock_run_in_executor(func, *args):
             nonlocal call_count
@@ -188,7 +195,6 @@ class TestOdooClientConcurrency:
 
         client._run_in_executor = mock_run
         call_count = 0
-        original_run = client._run_in_executor
 
         async def counting_mock(*args):
             nonlocal call_count

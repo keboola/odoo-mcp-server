@@ -27,7 +27,6 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
-    "playwright>=1.49.0",
     "respx>=0.22.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -47,10 +46,9 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
-    "e2e: End-to-end tests",
+    "e2e: End-to-end tests (run via Claude Code Chrome integration)",
     "oauth: OAuth-related tests",
     "odoo: Odoo-related tests",
-    "browser: Browser-based tests using Playwright",
     "live: Tests against live Odoo instance",
     "claude: Tests for Claude.ai MCP integration",
     "mcp: MCP protocol tests",
@@ -60,7 +58,7 @@ markers = [
 
 [tool.ruff]
 target-version = "py312"
-line-length = 88
+line-length = 140
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
