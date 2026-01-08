@@ -98,21 +98,32 @@ Add to your Claude Desktop configuration:
 ## Testing
 
 ```bash
-# Run all tests
+# Run all automated tests
 pytest
 
 # Run specific test categories
 pytest -m unit          # Unit tests
 pytest -m integration   # Integration tests
-pytest -m e2e          # End-to-end tests
-pytest -m oauth        # OAuth tests
+pytest -m oauth         # OAuth tests
 
 # Run with coverage
 pytest --cov=src/ --cov-report=html
-
-# Run E2E tests with visible browser
-pytest tests/e2e -m e2e --headed
 ```
+
+### E2E Tests (Claude Code Chrome Integration)
+
+E2E tests use Claude Code's Chrome integration for browser automation:
+
+```bash
+# Run interactive E2E test suite
+./scripts/run_e2e_tests.sh
+
+# Or manually with Claude Code
+claude --chrome
+# Then use /chrome to verify connection
+```
+
+See [tests/e2e/README.md](tests/e2e/README.md) for detailed E2E testing guide.
 
 ## Development
 
