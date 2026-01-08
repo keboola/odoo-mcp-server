@@ -9,6 +9,7 @@ Run with: pytest tests/integration/test_live_odoo.py -v
 
 import json
 import os
+
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.live]

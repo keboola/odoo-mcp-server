@@ -87,40 +87,10 @@ jobs:
           TEST_MCP_SERVER_URL: ${{ secrets.TEST_MCP_SERVER_URL }}
           TEST_AUTH_SERVER_URL: ${{ secrets.TEST_AUTH_SERVER_URL }}
 
-  e2e-tests:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    # Only run on main branch or when explicitly requested
-    if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'run-e2e')
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Install Playwright browsers
-        run: playwright install chromium
-
-      - name: Run E2E tests
-        run: pytest tests/e2e -v
-        env:
-          TEST_ODOO_URL: ${{ secrets.TEST_ODOO_URL }}
-          TEST_ODOO_DB: ${{ secrets.TEST_ODOO_DB }}
-          TEST_ODOO_API_KEY: ${{ secrets.TEST_ODOO_API_KEY }}
-          TEST_MCP_SERVER_URL: ${{ secrets.TEST_MCP_SERVER_URL }}
-          TEST_AUTH_SERVER_URL: ${{ secrets.TEST_AUTH_SERVER_URL }}
-          TEST_CLIENT_ID: ${{ secrets.TEST_CLIENT_ID }}
-          TEST_CLIENT_SECRET: ${{ secrets.TEST_CLIENT_SECRET }}
-          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+  # NOTE: E2E tests use Claude Code Chrome integration and require
+  # interactive browser access. They cannot run in headless CI.
+  # Run manually with: ./scripts/run_e2e_tests.sh
+  # See tests/e2e/README.md for details.
 
   build:
     name: Build Docker Image

@@ -8,6 +8,7 @@ Run with: pytest tests/e2e/test_employee_scenarios.py -v -m employee
 """
 
 import json
+
 import pytest
 
 pytestmark = [pytest.mark.e2e, pytest.mark.employee]

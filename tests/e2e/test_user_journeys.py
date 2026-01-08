@@ -8,6 +8,7 @@ Run with: pytest tests/e2e/test_user_journeys.py -v -m e2e
 """
 
 import json
+
 import pytest
 
 pytestmark = [pytest.mark.e2e]

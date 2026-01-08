@@ -8,6 +8,7 @@ Run with: pytest tests/integration/test_odoo_integration.py -v -m odoo
 """
 
 import json
+
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.odoo]

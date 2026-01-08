@@ -13,7 +13,6 @@ Prerequisites:
 Run with: pytest tests/e2e/test_agent_sdk.py -v
 """
 
-import json
 import os
 import sys
 from pathlib import Path
