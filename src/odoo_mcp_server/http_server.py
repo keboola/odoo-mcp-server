@@ -5,6 +5,7 @@ Provides HTTP transport for MCP protocol with OAuth authentication.
 """
 
 import asyncio
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -110,17 +111,69 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# =============================================================================
+# Security Configuration
+# =============================================================================
+
+# Allowed CORS origins (restrict from wildcard for security)
+ALLOWED_ORIGINS = [
+    "https://claude.ai",
+    "https://console.anthropic.com",
+    "https://app.slack.com",
+    # Add localhost for development only when DEBUG is enabled
+]
+
+if settings.debug:
+    ALLOWED_ORIGINS.extend([
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080",
+    ])
+
+# Add CORS middleware with restricted origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
-# Add OAuth middleware (after CORS so preflight requests work)
+# Security headers middleware
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Enable XSS filter (legacy but still useful)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Strict Transport Security (enforce HTTPS for 1 year)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Referrer policy - don't leak referrer to third parties
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Content Security Policy - restrict resource loading
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "frame-ancestors 'none'"
+    )
+
+    return response
+
+
+# Add OAuth middleware (after security headers, after CORS so preflight requests work)
 @app.middleware("http")
 async def oauth_middleware(request: Request, call_next):
     """OAuth authentication middleware."""
@@ -140,12 +193,12 @@ async def oauth_middleware(request: Request, call_next):
 
     token = auth_header[7:]
 
-    # Log token info for debugging (first 20 chars only for security)
-    token_preview = token[:20] + "..." if len(token) > 20 else token
-    logger.info(f"Received token (preview): {token_preview}, length: {len(token)}")
+    # Log token metadata only (hash for correlation, never content)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
+    logger.info(f"Received token: hash={token_hash}, length={len(token)}")
 
-    # In dev/test mode, skip validation for test tokens
-    is_test_mode = settings.oauth_dev_mode or settings.debug or settings.yolo_mode or token == "test_token"
+    # In dev/test mode, skip validation (only when explicitly enabled via environment)
+    is_test_mode = settings.oauth_dev_mode or settings.yolo_mode
     if is_test_mode:
         import os
         dev_email = os.getenv("TEST_USER_EMAIL", "dev@example.com")
@@ -168,7 +221,7 @@ async def oauth_middleware(request: Request, call_next):
             return await call_next(request)
         except Exception as e:
             logger.warning(f"Token validation failed: {type(e).__name__}: {e}")
-            logger.warning(f"Token was: {token[:50]}..." if len(token) > 50 else f"Token was: {token}")
+            logger.warning(f"Token hash: {token_hash}")
             return JSONResponse(
                 status_code=401,
                 content={"error": "invalid_token", "error_description": str(e)},

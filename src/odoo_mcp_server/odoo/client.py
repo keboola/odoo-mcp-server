@@ -3,12 +3,16 @@ Odoo XML-RPC Client
 
 Handles communication with Odoo ERP instance.
 Includes async-safe operations and error handling.
+
+Security Note: XML-RPC is used to communicate with trusted internal Odoo servers only.
+The B411 bandit warning about XML vulnerabilities is acknowledged - we only connect
+to our own Odoo instances, not untrusted external sources.
 """
 import asyncio
-import xmlrpc.client
+import xmlrpc.client  # nosec B411 - connecting to trusted internal Odoo server only
 from functools import partial
 from typing import Any
-from xmlrpc.client import Fault
+from xmlrpc.client import Fault  # nosec B411
 
 from .exceptions import (
     OdooAuthenticationError,

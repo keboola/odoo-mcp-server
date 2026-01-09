@@ -92,10 +92,39 @@ jobs:
   # Run manually with: ./scripts/run_e2e_tests.sh
   # See tests/e2e/README.md for details.
 
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install bandit pip-audit safety
+
+      - name: Run Bandit (Python security linter)
+        run: bandit -r src/ -ll -ii -x tests/
+
+      - name: Run pip-audit (dependency vulnerabilities)
+        run: pip-audit --strict --progress-spinner=off
+        continue-on-error: true
+
+      - name: Run Safety check (known vulnerabilities)
+        run: safety check --full-report
+        continue-on-error: true
+
   build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests]
+    needs: [lint, unit-tests, security]
 
     steps:
       - uses: actions/checkout@v4
