@@ -236,10 +236,13 @@ async def oauth_middleware(request: Request, call_next):
 # =============================================================================
 
 
+CODE_VERSION = "2026-01-09-v3-year-filter"
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "odoo-mcp-server"}
+    return {"status": "healthy", "service": "odoo-mcp-server", "code_version": CODE_VERSION}
 
 
 @app.get("/.well-known/oauth-protected-resource")
