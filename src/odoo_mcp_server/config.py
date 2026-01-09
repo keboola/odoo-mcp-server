@@ -143,8 +143,8 @@ class Settings(BaseSettings):
     token_storage_backend: str = "memory"
     token_encryption_key: str | None = None  # For encrypted storage
 
-    # HTTP Server
-    http_host: str = "0.0.0.0"
+    # HTTP Server (0.0.0.0 needed for Docker container networking)
+    http_host: str = "0.0.0.0"  # nosec B104 - required for container deployment
     http_port: int = 8080
 
     # Development
