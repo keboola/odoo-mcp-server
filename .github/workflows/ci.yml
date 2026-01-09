@@ -165,7 +165,7 @@ jobs:
 
       - name: Build and push to GCR
         run: |
-          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/odoo-mcp-server:${{ github.sha }} -f docker/Dockerfile .
+          docker build --no-cache --build-arg CACHEBUST=${{ github.sha }} -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/odoo-mcp-server:${{ github.sha }} -f docker/Dockerfile .
           docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/odoo-mcp-server:${{ github.sha }}
 
       - name: Deploy to Cloud Run (Staging)

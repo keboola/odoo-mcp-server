@@ -2,6 +2,9 @@
 
 FROM python:3.12-slim AS builder
 
+# Force cache invalidation on each build
+ARG CACHEBUST=1
+
 WORKDIR /app
 
 # Install build dependencies
