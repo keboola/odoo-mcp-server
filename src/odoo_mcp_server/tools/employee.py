@@ -493,60 +493,45 @@ async def execute_employee_tool(
         leave_type_filter = arguments.get("leave_type")
         year = arguments.get("year", date.today().year)
 
-        # Build domain to find allocations ACTIVE during the target year
-        # An allocation is active during a year if:
-        # - It starts before or during the year (date_from <= year_end)
-        # - AND it ends after the year starts OR has no end date (date_to >= year_start OR date_to = False)
+        # Use Odoo's native computed fields with date context for year-specific balance
+        # Odoo calculates balance based on allocations valid at the target date
         year_start = f"{year}-01-01"
         year_end = f"{year}-12-31"
 
-        domain = [
-            ["employee_id", "=", employee_id],
-            ["state", "=", "validate"],  # Only approved allocations
-            ["date_from", "<=", year_end],  # Allocation starts before year ends
-            "|",  # OR operator for the next two conditions
-            ["date_to", ">=", year_start],  # Allocation ends after year starts
-            ["date_to", "=", False],  # OR has no end date (open-ended)
-        ]
-
-        allocations = await odoo_client.search_read(
-            model="hr.leave.allocation",
-            domain=domain,
-            fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
+        # Try native method with date context first (Odoo 18+ approach)
+        # The context keys used by Odoo for date-based filtering:
+        # - default_date_from: Used by leave allocation/request forms
+        # - date: Generic date context
+        leave_types = await odoo_client.execute(
+            "hr.leave.type",
+            "search_read",
+            [["requires_allocation", "=", "yes"]],
+            fields=["id", "name", "max_leaves", "leaves_taken", "virtual_remaining_leaves"],
+            context={
+                "employee_id": employee_id,
+                "default_date_from": year_start,
+                "default_date_to": year_end,
+            },
         )
 
-        # Get leave types for names
-        leave_type_ids = list(set(a["holiday_status_id"][0] for a in allocations if a.get("holiday_status_id")))
-        leave_types = {}
-        if leave_type_ids:
-            types = await odoo_client.read(
-                model="hr.leave.type",
-                ids=leave_type_ids,
-                fields=["name"],
-            )
-            leave_types = {t["id"]: t["name"] for t in types}
-
         balances = []
-        for alloc in allocations:
-            if not alloc.get("holiday_status_id"):
-                continue
-            type_id = alloc["holiday_status_id"][0]
-            type_name = leave_types.get(type_id, alloc["holiday_status_id"][1])
+        for lt in leave_types:
+            type_name = lt.get("name", "Unknown")
 
             if leave_type_filter and leave_type_filter.lower() not in type_name.lower():
                 continue
 
-            allocated = alloc.get("number_of_days", 0)
-            taken = alloc.get("leaves_taken", 0)
-            remaining = allocated - taken
+            allocated = lt.get("max_leaves", 0) or 0
+            taken = lt.get("leaves_taken", 0) or 0
+            remaining = lt.get("virtual_remaining_leaves", 0) or 0
 
-            balances.append({
-                "leave_type": type_name,
-                "allocated": allocated,
-                "taken": taken,
-                "remaining": remaining,
-                "period": f"{alloc.get('date_from', 'N/A')} to {alloc.get('date_to') or 'ongoing'}",
-            })
+            if allocated > 0 or taken > 0:
+                balances.append({
+                    "leave_type": type_name,
+                    "allocated": allocated,
+                    "taken": taken,
+                    "remaining": remaining,
+                })
 
         leave_result = {
             "year": year,
