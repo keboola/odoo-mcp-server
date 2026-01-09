@@ -355,11 +355,16 @@ class TestEmployeeToolsWithMocking:
         """Test get_my_leave_balance tool with mocked client."""
         from odoo_mcp_server.tools.employee import execute_employee_tool
 
-        # Mock hr.leave.type with native computed fields
-        # Uses execute() to call search_read with context for employee-specific balances
-        mock_odoo_client.execute.return_value = [
-            {"id": 1, "name": "Paid Time Off", "max_leaves": 20, "leaves_taken": 5, "virtual_remaining_leaves": 15},
-            {"id": 2, "name": "Sick Leave", "max_leaves": 10, "leaves_taken": 2, "virtual_remaining_leaves": 8},
+        # Mock allocations that are active during 2026
+        mock_odoo_client.search_read.return_value = [
+            {"id": 1, "holiday_status_id": [1, "Paid Time Off"], "number_of_days": 20, "leaves_taken": 5,
+             "date_from": "2026-01-01", "date_to": "2026-12-31"},
+            {"id": 2, "holiday_status_id": [2, "Sick Leave"], "number_of_days": 10, "leaves_taken": 2,
+             "date_from": "2026-01-01", "date_to": False},
+        ]
+        mock_odoo_client.read.return_value = [
+            {"id": 1, "name": "Paid Time Off"},
+            {"id": 2, "name": "Sick Leave"},
         ]
 
         result = await execute_employee_tool(
@@ -376,15 +381,17 @@ class TestEmployeeToolsWithMocking:
         assert response["year"] == 2026
         balances = response["balances"]
         assert len(balances) == 2
-        assert balances[0]["remaining"] == 15  # From virtual_remaining_leaves
-        assert balances[1]["remaining"] == 8   # From virtual_remaining_leaves
+        assert balances[0]["remaining"] == 15  # 20 - 5
+        assert balances[1]["remaining"] == 8   # 10 - 2
 
-        # Verify execute was called with correct parameters
-        mock_odoo_client.execute.assert_called_once()
-        call_args = mock_odoo_client.execute.call_args
-        assert call_args[0][0] == "hr.leave.type"
-        assert call_args[0][1] == "search_read"
-        assert call_args[1]["context"]["employee_id"] == 1
+        # Verify search_read was called with correct domain (active during year filter)
+        mock_odoo_client.search_read.assert_called_once()
+        call_args = mock_odoo_client.search_read.call_args
+        assert call_args[1]["model"] == "hr.leave.allocation"
+        # Domain includes: employee_id, state, date_from <= year_end, and OR for date_to
+        domain = call_args[1]["domain"]
+        assert ["employee_id", "=", 1] in domain
+        assert ["state", "=", "validate"] in domain
 
 
 class TestOdooClientConfiguration:
