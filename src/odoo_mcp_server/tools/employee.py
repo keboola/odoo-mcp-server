@@ -500,14 +500,12 @@ async def execute_employee_tool(
         # Filter allocations by:
         # 1. Employee
         # 2. Approved state only
-        # 3. Valid during the specified year (date_from <= year_end AND (date_to >= year_start OR date_to is False))
+        # 3. Allocation starts within the target year (most accurate for annual allocations)
         domain = [
             ["employee_id", "=", employee_id],
             ["state", "=", "validate"],  # Only approved allocations
+            ["date_from", ">=", year_start],  # Allocation starts on or after year start
             ["date_from", "<=", year_end],  # Allocation starts before year ends
-            "|",
-            ["date_to", ">=", year_start],  # Allocation ends after year starts
-            ["date_to", "=", False],  # Or allocation has no end date (open-ended)
         ]
 
         allocations = await odoo_client.search_read(
