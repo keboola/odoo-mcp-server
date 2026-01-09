@@ -128,15 +128,18 @@ class TestHTTPServerMCPProtocol:
     @pytest.fixture
     def authenticated_client(self, monkeypatch):
         """Create test client with dev mode authentication enabled."""
+        import importlib
+
+        from fastapi.testclient import TestClient
+
+        import odoo_mcp_server.http_server as http_server_module
+
         # Enable OAuth dev mode to bypass token validation
         monkeypatch.setenv("OAUTH_DEV_MODE", "true")
 
-        # Need to reimport to pick up env var change
-        import importlib
-        import odoo_mcp_server.http_server as http_server_module
+        # Reload to pick up env var change
         importlib.reload(http_server_module)
 
-        from fastapi.testclient import TestClient
         client = TestClient(http_server_module.app)
         return client
 
