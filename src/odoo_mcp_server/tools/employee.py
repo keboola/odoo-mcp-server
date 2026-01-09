@@ -837,18 +837,33 @@ async def execute_employee_tool(
             fields=["id", "name"],
         )
 
-        # Count files per directory
-        categories = []
-        for d in subdirs:
-            file_count = await odoo_client.search_count(
+        # Batch count files per directory (avoid N+1 queries)
+        subdir_ids = [d["id"] for d in subdirs]
+        file_counts: dict[int, int] = {dir_id: 0 for dir_id in subdir_ids}
+
+        if subdir_ids:
+            # Single query to get all files in any of the subdirectories
+            files = await odoo_client.search_read(
                 model="dms.file",
-                domain=[["directory_id", "=", d["id"]]],
+                domain=[["directory_id", "in", subdir_ids]],
+                fields=["directory_id"],
             )
-            categories.append({
+            # Count files per directory locally
+            for f in files:
+                dir_id = f.get("directory_id")
+                if dir_id and isinstance(dir_id, list):
+                    dir_id = dir_id[0]  # Many2one field returns [id, name]
+                if dir_id in file_counts:
+                    file_counts[dir_id] += 1
+
+        categories = [
+            {
                 "name": d["name"],
-                "document_count": file_count,
+                "document_count": file_counts.get(d["id"], 0),
                 "can_upload": d["name"] == "Identity",  # Only Identity folder allows uploads
-            })
+            }
+            for d in subdirs
+        ]
 
         return [TextContent(type="text", text=json.dumps({"categories": categories}))]
 
