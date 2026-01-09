@@ -355,10 +355,12 @@ class TestEmployeeToolsWithMocking:
         """Test get_my_leave_balance tool with mocked client."""
         from odoo_mcp_server.tools.employee import execute_employee_tool
 
-        # Mock allocations
+        # Mock allocations (with date fields for year filtering)
         mock_odoo_client.search_read.return_value = [
-            {"id": 1, "holiday_status_id": [1, "Paid Time Off"], "number_of_days": 20, "leaves_taken": 5},
-            {"id": 2, "holiday_status_id": [2, "Sick Leave"], "number_of_days": 10, "leaves_taken": 2},
+            {"id": 1, "holiday_status_id": [1, "Paid Time Off"], "number_of_days": 20, "leaves_taken": 5,
+             "date_from": "2026-01-01", "date_to": "2026-12-31"},
+            {"id": 2, "holiday_status_id": [2, "Sick Leave"], "number_of_days": 10, "leaves_taken": 2,
+             "date_from": "2026-01-01", "date_to": False},
         ]
         mock_odoo_client.read.return_value = [
             {"id": 1, "name": "Paid Time Off"},
@@ -367,14 +369,17 @@ class TestEmployeeToolsWithMocking:
 
         result = await execute_employee_tool(
             name="get_my_leave_balance",
-            arguments={},
+            arguments={"year": 2026},
             odoo_client=mock_odoo_client,
             employee_id=1,
         )
 
         import json
-        balances = json.loads(result[0].text)
+        response = json.loads(result[0].text)
 
+        # Response format: {"year": ..., "balances": [...]}
+        assert response["year"] == 2026
+        balances = response["balances"]
         assert len(balances) == 2
         assert balances[0]["remaining"] == 15  # 20 - 5
         assert balances[1]["remaining"] == 8   # 10 - 2
