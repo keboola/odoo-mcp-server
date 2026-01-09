@@ -179,3 +179,8 @@ jobs:
             --set-env-vars "ODOO_DB=${{ secrets.STAGING_ODOO_DB }}" \
             --set-secrets "ODOO_API_KEY=odoo-api-key:latest" \
             --set-secrets "OAUTH_CLIENT_SECRET=oauth-client-secret:latest"
+
+          # Ensure traffic is routed to latest revision
+          gcloud run services update-traffic odoo-mcp-server-staging \
+            --to-latest \
+            --region europe-west1
