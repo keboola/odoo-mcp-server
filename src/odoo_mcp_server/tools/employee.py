@@ -514,17 +514,8 @@ async def execute_employee_tool(
             fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
         )
 
-        # If no allocations found for specific year, fall back to showing all active allocations
-        if not allocations:
-            domain = [
-                ["employee_id", "=", employee_id],
-                ["state", "=", "validate"],
-            ]
-            allocations = await odoo_client.search_read(
-                model="hr.leave.allocation",
-                domain=domain,
-                fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
-            )
+        # No fallback - only return allocations for the requested year
+        # If no allocations found, return empty result with clear message
 
         # Get leave types for names
         leave_type_ids = list(set(a["holiday_status_id"][0] for a in allocations if a.get("holiday_status_id")))
@@ -567,7 +558,7 @@ async def execute_employee_tool(
         leave_result = {
             "year": year,
             "balances": balances,
-            "note": f"Showing allocations starting in {year}" if allocations else "No allocations found for this year",
+            "note": f"Showing {len(balances)} allocation(s) starting in {year}" if balances else f"No allocations found starting in {year}",
         }
         return [TextContent(type="text", text=json.dumps(leave_result, default=str))]
 
