@@ -73,14 +73,18 @@ EMPLOYEE_TOOLS = [
     # === Time Off / Leave ===
     Tool(
         name="get_my_leave_balance",
-        description="Get your remaining leave balance for all leave types (vacation, sick leave, etc.)",
+        description="Get your remaining leave balance for all leave types (vacation, sick leave, etc.) for a specific year",
         inputSchema={
             "type": "object",
             "properties": {
                 "leave_type": {
                     "type": "string",
                     "description": "Optional: specific leave type to check (e.g., 'Paid Time Off', 'Sick Leave')",
-                }
+                },
+                "year": {
+                    "type": "integer",
+                    "description": "Year to check balance for (default: current year)",
+                },
             },
         },
     ),
@@ -487,13 +491,29 @@ async def execute_employee_tool(
 
     elif name == "get_my_leave_balance":
         leave_type_filter = arguments.get("leave_type")
+        year = arguments.get("year", date.today().year)
 
-        # Get allocations
-        domain = [["employee_id", "=", employee_id]]
+        # Build domain with year filtering
+        year_start = f"{year}-01-01"
+        year_end = f"{year}-12-31"
+
+        # Filter allocations by:
+        # 1. Employee
+        # 2. Approved state only
+        # 3. Valid during the specified year (date_from <= year_end AND (date_to >= year_start OR date_to is False))
+        domain = [
+            ["employee_id", "=", employee_id],
+            ["state", "=", "validate"],  # Only approved allocations
+            ["date_from", "<=", year_end],  # Allocation starts before year ends
+            "|",
+            ["date_to", ">=", year_start],  # Allocation ends after year starts
+            ["date_to", "=", False],  # Or allocation has no end date (open-ended)
+        ]
+
         allocations = await odoo_client.search_read(
             model="hr.leave.allocation",
             domain=domain,
-            fields=["holiday_status_id", "number_of_days", "leaves_taken"],
+            fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
         )
 
         # Get leave types for names
@@ -528,7 +548,11 @@ async def execute_employee_tool(
                 "remaining": remaining,
             })
 
-        return [TextContent(type="text", text=json.dumps(balances, default=str))]
+        result = {
+            "year": year,
+            "balances": balances,
+        }
+        return [TextContent(type="text", text=json.dumps(result, default=str))]
 
     elif name == "get_my_leave_requests":
         status_filter = arguments.get("status", "all")
