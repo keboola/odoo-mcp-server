@@ -559,6 +559,7 @@ async def execute_employee_tool(
             "year": year,
             "balances": balances,
             "note": f"Showing {len(balances)} allocation(s) starting in {year}" if balances else f"No allocations found starting in {year}",
+            "version": "v2-strict-year-filter",
         }
         return [TextContent(type="text", text=json.dumps(leave_result, default=str))]
 
