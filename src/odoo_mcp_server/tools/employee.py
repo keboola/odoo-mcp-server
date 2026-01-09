@@ -548,11 +548,11 @@ async def execute_employee_tool(
                 "remaining": remaining,
             })
 
-        result = {
+        leave_result = {
             "year": year,
             "balances": balances,
         }
-        return [TextContent(type="text", text=json.dumps(result, default=str))]
+        return [TextContent(type="text", text=json.dumps(leave_result, default=str))]
 
     elif name == "get_my_leave_requests":
         status_filter = arguments.get("status", "all")
