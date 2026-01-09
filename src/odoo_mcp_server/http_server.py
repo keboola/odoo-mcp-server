@@ -236,7 +236,7 @@ async def oauth_middleware(request: Request, call_next):
 # =============================================================================
 
 
-CODE_VERSION = "2026-01-09-v3-year-filter"
+CODE_VERSION = "2026-01-09-v4-debug-marker"
 
 
 @app.get("/health")
