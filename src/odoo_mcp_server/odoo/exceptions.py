@@ -13,7 +13,7 @@ Error Code Reference (Odoo XML-RPC):
 
 import socket
 from typing import Any
-from xmlrpc.client import Fault
+from xmlrpc.client import Fault  # nosec B411 - used for error handling with trusted Odoo server
 
 
 class OdooError(Exception):
