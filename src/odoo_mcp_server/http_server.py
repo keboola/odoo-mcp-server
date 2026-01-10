@@ -12,7 +12,6 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -181,7 +180,15 @@ async def security_headers_middleware(request: Request, call_next):
 async def oauth_middleware(request: Request, call_next):
     """OAuth authentication middleware."""
     # Skip auth for certain paths
-    skip_paths = ["/health", "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/callback", "/", "/authorize", "/token"]
+    skip_paths = [
+        "/health",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-authorization-server",
+        "/callback",
+        "/",
+        "/authorize",
+        "/token",
+    ]
     if request.url.path in skip_paths:
         return await call_next(request)
 
