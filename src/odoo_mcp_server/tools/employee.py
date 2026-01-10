@@ -493,36 +493,41 @@ async def execute_employee_tool(
         leave_type_filter = arguments.get("leave_type")
         year = arguments.get("year", date.today().year)
 
-        # Query allocations directly with year filtering
-        # Filter: allocation validity period overlaps with the target year
         year_start = f"{year}-01-01"
         year_end = f"{year}-12-31"
 
-        # Find allocations where:
-        # - date_from is within the target year (allocation starts in this year)
-        # This is the most accurate filter for annual allocations
-        domain = [
-            ["employee_id", "=", employee_id],
-            ["state", "=", "validate"],  # Only approved allocations
-            ["date_from", ">=", year_start],
-            ["date_from", "<=", year_end],
-        ]
-
-        allocations = await odoo_client.search_read(
+        # First: Get ALL allocations to see the data structure
+        all_allocations = await odoo_client.search_read(
             model="hr.leave.allocation",
-            domain=domain,
-            fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
+            domain=[
+                ["employee_id", "=", employee_id],
+                ["state", "=", "validate"],
+            ],
+            fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to", "name", "allocation_type"],
         )
 
-        # Debug: Include filter info in response
+        # Filter in Python: allocations where date_from starts in the target year
+        allocations = []
+        for a in all_allocations:
+            df = a.get("date_from")
+            if df and isinstance(df, str) and df.startswith(str(year)):
+                allocations.append(a)
+
+        # Debug info showing ALL allocations and which ones matched
         debug_info = {
-            "filter_applied": f"date_from >= {year_start} AND date_from <= {year_end}",
-            "allocations_found": len(allocations),
-            "allocation_dates": [a.get("date_from") for a in allocations],
+            "year_requested": year,
+            "total_allocations": len(all_allocations),
+            "filtered_count": len(allocations),
+            "all_allocation_dates": [
+                {"id": a.get("id"), "date_from": a.get("date_from"), "date_to": a.get("date_to"), "days": a.get("number_of_days")}
+                for a in all_allocations
+            ],
         }
 
-        # No fallback - only return allocations for the requested year
-        # If no allocations found, return empty result with clear message
+        # If no allocations match the year filter, show all with a note
+        if not allocations:
+            allocations = all_allocations
+            debug_info["note"] = "No allocations found starting in {}, showing all".format(year)
 
         # Get leave types for names
         leave_type_ids = list(set(a["holiday_status_id"][0] for a in allocations if a.get("holiday_status_id")))
