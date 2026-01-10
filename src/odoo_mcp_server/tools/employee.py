@@ -493,83 +493,51 @@ async def execute_employee_tool(
         leave_type_filter = arguments.get("leave_type")
         year = arguments.get("year", date.today().year)
 
-        # First: Get ALL allocations to see the data structure
-        all_allocations = await odoo_client.search_read(
-            model="hr.leave.allocation",
-            domain=[
-                ["employee_id", "=", employee_id],
-                ["state", "=", "validate"],
-            ],
-            fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to", "name", "allocation_type"],
+        # Use Odoo's native computed fields on hr.leave.type with date context
+        # This matches how the Odoo Time Off Dashboard calculates balances
+        year_start = f"{year}-01-01"
+        year_end = f"{year}-12-31"
+
+        # Query leave types with employee and date context
+        # The context params make Odoo compute balances for the specific employee and date range
+        leave_types = await odoo_client.execute(
+            model="hr.leave.type",
+            method="search_read",
+            [["requires_allocation", "=", "yes"]],
+            {
+                "fields": ["id", "name", "max_leaves", "leaves_taken", "virtual_remaining_leaves"],
+                "context": {
+                    "employee_id": employee_id,
+                    "default_employee_id": employee_id,
+                    "default_date_from": year_start,
+                    "default_date_to": year_end,
+                },
+            },
         )
 
-        # Filter in Python: allocations where date_from starts in the target year
-        allocations = []
-        for a in all_allocations:
-            df = a.get("date_from")
-            if df and isinstance(df, str) and df.startswith(str(year)):
-                allocations.append(a)
-
-        # Debug info showing ALL allocations and which ones matched
-        debug_info = {
-            "year_requested": year,
-            "total_allocations": len(all_allocations),
-            "filtered_count": len(allocations),
-            "all_allocation_dates": [
-                {"id": a.get("id"), "date_from": a.get("date_from"), "date_to": a.get("date_to"), "days": a.get("number_of_days")}
-                for a in all_allocations
-            ],
-        }
-
-        # If no allocations match the year filter, show all with a note
-        if not allocations:
-            allocations = all_allocations
-            debug_info["note"] = f"No allocations found starting in {year}, showing all"
-
-        # Get leave types for names
-        leave_type_ids = list(set(a["holiday_status_id"][0] for a in allocations if a.get("holiday_status_id")))
-        leave_types_map = {}
-        if leave_type_ids:
-            types = await odoo_client.read(
-                model="hr.leave.type",
-                ids=leave_type_ids,
-                fields=["name"],
-            )
-            leave_types_map = {t["id"]: t["name"] for t in types}
-
         balances = []
-        for alloc in allocations:
-            if not alloc.get("holiday_status_id"):
-                continue
-            type_id = alloc["holiday_status_id"][0]
-            type_name = leave_types_map.get(type_id, alloc["holiday_status_id"][1])
-
-            if leave_type_filter and leave_type_filter.lower() not in type_name.lower():
+        for lt in leave_types:
+            if leave_type_filter and leave_type_filter.lower() not in lt.get("name", "").lower():
                 continue
 
-            allocated = alloc.get("number_of_days", 0)
-            taken = alloc.get("leaves_taken", 0)
-            remaining = allocated - taken
+            allocated = lt.get("max_leaves", 0)
+            taken = lt.get("leaves_taken", 0)
+            remaining = lt.get("virtual_remaining_leaves", 0)
 
-            # Include allocation period for clarity
-            date_from = alloc.get("date_from", "unknown")
-            date_to = alloc.get("date_to") or "ongoing"
-
-            balances.append({
-                "leave_type": type_name,
-                "allocated": allocated,
-                "taken": taken,
-                "remaining": remaining,
-                "valid_from": date_from,
-                "valid_to": date_to,
-            })
+            # Only include types with allocations
+            if allocated > 0 or taken > 0:
+                balances.append({
+                    "leave_type": lt.get("name"),
+                    "allocated": allocated,
+                    "taken": taken,
+                    "remaining": remaining,
+                })
 
         leave_result = {
             "year": year,
             "balances": balances,
-            "note": f"Showing {len(balances)} allocation(s) starting in {year}" if balances else f"No allocations found starting in {year}",
-            "version": "v4-debug",
-            "debug": debug_info,
+            "note": f"Balance as of {year}" if balances else f"No leave allocations found for {year}",
+            "version": "v7-native-odoo-fields",
         }
         return [TextContent(type="text", text=json.dumps(leave_result, default=str))]
 
