@@ -5,6 +5,7 @@ Verifies that default Odoo scopes are granted to Google OAuth users
 even when their token contains standard OIDC scopes.
 """
 import pytest
+
 from odoo_mcp_server.oauth.resource_server import extract_user_context
 
 pytestmark = [pytest.mark.unit, pytest.mark.oauth]
