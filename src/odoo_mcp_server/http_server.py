@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlencode
 
+import httpx
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -179,7 +181,7 @@ async def security_headers_middleware(request: Request, call_next):
 async def oauth_middleware(request: Request, call_next):
     """OAuth authentication middleware."""
     # Skip auth for certain paths
-    skip_paths = ["/health", "/.well-known/oauth-protected-resource", "/callback", "/", "/authorize"]
+    skip_paths = ["/health", "/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/callback", "/", "/authorize", "/token"]
     if request.url.path in skip_paths:
         return await call_next(request)
 
@@ -237,7 +239,7 @@ async def oauth_middleware(request: Request, call_next):
 # =============================================================================
 
 
-CODE_VERSION = "2026-01-10-v7-native-odoo"
+CODE_VERSION = "2026-01-10-v8-token-endpoint"
 
 
 @app.get("/health")
@@ -291,6 +293,87 @@ async def oauth_authorize(
         url=f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}",
         status_code=302,
     )
+
+
+@app.post("/token")
+async def oauth_token(request: Request):
+    """
+    OAuth token endpoint - exchange authorization code for access token.
+
+    Per MCP OAuth spec, this endpoint proxies to Google's token endpoint.
+    Claude.ai sends authorization code here after successful OAuth redirect.
+    """
+    # Parse form data (OAuth spec requires application/x-www-form-urlencoded)
+    form = await request.form()
+
+    grant_type = form.get("grant_type")
+    code = form.get("code")
+    redirect_uri = form.get("redirect_uri")
+    client_id = form.get("client_id")
+    client_secret = form.get("client_secret")
+    code_verifier = form.get("code_verifier")  # PKCE
+
+    logger.info(f"Token request: grant_type={grant_type}, has_code={bool(code)}")
+
+    if grant_type != "authorization_code":
+        return JSONResponse(
+            status_code=400,
+            content={"error": "unsupported_grant_type", "error_description": "Only authorization_code is supported"}
+        )
+
+    if not code:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "error_description": "Missing authorization code"}
+        )
+
+    # Build token request to Google
+    token_data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri or "https://claude.ai/api/mcp/auth_callback",
+        "client_id": client_id or settings.oauth_client_id,
+        "client_secret": client_secret or settings.oauth_client_secret,
+    }
+
+    # Add PKCE code_verifier if provided
+    if code_verifier:
+        token_data["code_verifier"] = code_verifier
+
+    # Exchange code at Google's token endpoint
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data=token_data,
+        )
+
+    result = response.json()
+    logger.info(f"Google token response: status={response.status_code}, has_access_token={'access_token' in result}")
+
+    # Forward Google's response
+    return JSONResponse(
+        status_code=response.status_code,
+        content=result
+    )
+
+
+@app.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server_metadata():
+    """
+    RFC 8414 OAuth Authorization Server Metadata.
+
+    This helps MCP clients discover our OAuth endpoints.
+    """
+    base_url = settings.oauth_resource_identifier
+    return {
+        "issuer": base_url,
+        "authorization_endpoint": f"{base_url}/authorize",
+        "token_endpoint": f"{base_url}/token",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "code_challenge_methods_supported": ["S256"],
+        "scopes_supported": ["openid", "email", "profile"],
+    }
 
 
 @app.get("/callback")
