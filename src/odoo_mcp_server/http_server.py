@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
     global odoo_client, resource_server
 
     # Initialize Odoo client
+    logger.info(f"Initializing Odoo client: {settings.odoo_url} (DB: {settings.odoo_db}, User: {settings.odoo_username or 'admin'})")
     odoo_client = OdooClient(
         url=settings.odoo_url,
         db=settings.odoo_db,
@@ -573,6 +574,7 @@ async def handle_tools_call(params: dict, user: dict) -> dict:
     required_scopes = TOOL_SCOPE_REQUIREMENTS.get(tool_name, ["odoo.read"])
 
     if not check_scope_access(required_scopes, user_scopes):
+        logger.warning(f"Insufficient scope for tool {tool_name}. Required: {required_scopes}, Granted: {user_scopes}")
         raise HTTPException(
             status_code=403,
             detail=f"Insufficient scope for tool: {tool_name}",
@@ -585,36 +587,49 @@ async def handle_tools_call(params: dict, user: dict) -> dict:
     employee_tool_names = [t.name for t in EMPLOYEE_TOOLS]
     is_employee_tool = tool_name in employee_tool_names
 
-    if is_employee_tool:
-        # Resolve employee_id from OAuth user context
-        employee_id = user.get("employee_id")
+    try:
+        if is_employee_tool:
+            # Resolve employee_id from OAuth user context
+            employee_id = user.get("employee_id")
 
-        if not employee_id:
-            # Map OAuth claims to employee
-            try:
-                claims = user.get("claims", {})
-                # Add email from user context if not in claims
-                if "email" not in claims:
-                    claims["email"] = user.get("email")
+            if not employee_id:
+                # Map OAuth claims to employee
+                try:
+                    claims = user.get("claims", {})
+                    # Add email from user context if not in claims
+                    if "email" not in claims:
+                        claims["email"] = user.get("email")
 
-                employee_info = await get_employee_for_user(claims, odoo_client)
-                employee_id = employee_info["id"]
-                logger.info(f"Resolved employee {employee_id} for user {user.get('email')}")
-            except EmployeeNotFoundError as e:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"No Odoo employee found for your account: {e}",
-                )
+                    employee_info = await get_employee_for_user(claims, odoo_client)
+                    employee_id = employee_info["id"]
+                    logger.info(f"Resolved employee {employee_id} for user {user.get('email')}")
+                except EmployeeNotFoundError as e:
+                    logger.warning(f"Employee not found for user {user.get('email')}: {e}")
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"No Odoo employee found for your account: {e}",
+                    )
+                except Exception as e:
+                    logger.exception(f"Error resolving employee for user {user.get('email')}: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Error resolving employee: {e}",
+                    )
 
-        # Execute employee tool with employee context
-        result = await execute_employee_tool(tool_name, arguments, odoo_client, employee_id)
-    else:
-        # Execute generic tool (CRUD - only for admin users with odoo.write scope)
-        result = await execute_tool(tool_name, arguments, odoo_client)
+            # Execute employee tool with employee context
+            result = await execute_employee_tool(tool_name, arguments, odoo_client, employee_id)
+        else:
+            # Execute generic tool (CRUD - only for admin users with odoo.write scope)
+            result = await execute_tool(tool_name, arguments, odoo_client)
 
-    return {
-        "content": [{"type": "text", "text": r.text} for r in result],
-    }
+        return {
+            "content": [{"type": "text", "text": r.text} for r in result],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error executing tool {tool_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def handle_resources_list(user: dict) -> dict:
