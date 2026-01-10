@@ -514,6 +514,13 @@ async def execute_employee_tool(
             fields=["holiday_status_id", "number_of_days", "leaves_taken", "date_from", "date_to"],
         )
 
+        # Debug: Include filter info in response
+        debug_info = {
+            "filter_applied": f"date_from >= {year_start} AND date_from <= {year_end}",
+            "allocations_found": len(allocations),
+            "allocation_dates": [a.get("date_from") for a in allocations],
+        }
+
         # No fallback - only return allocations for the requested year
         # If no allocations found, return empty result with clear message
 
@@ -559,8 +566,8 @@ async def execute_employee_tool(
             "year": year,
             "balances": balances,
             "note": f"Showing {len(balances)} allocation(s) starting in {year}" if balances else f"No allocations found starting in {year}",
-            "version": "v3-2026-01-09-22-45",
-            "debug_marker": "NEW_CODE_DEPLOYED",
+            "version": "v4-debug",
+            "debug": debug_info,
         }
         return [TextContent(type="text", text=json.dumps(leave_result, default=str))]
 
