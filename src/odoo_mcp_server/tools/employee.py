@@ -493,9 +493,6 @@ async def execute_employee_tool(
         leave_type_filter = arguments.get("leave_type")
         year = arguments.get("year", date.today().year)
 
-        year_start = f"{year}-01-01"
-        year_end = f"{year}-12-31"
-
         # First: Get ALL allocations to see the data structure
         all_allocations = await odoo_client.search_read(
             model="hr.leave.allocation",
@@ -527,7 +524,7 @@ async def execute_employee_tool(
         # If no allocations match the year filter, show all with a note
         if not allocations:
             allocations = all_allocations
-            debug_info["note"] = "No allocations found starting in {}, showing all".format(year)
+            debug_info["note"] = f"No allocations found starting in {year}, showing all"
 
         # Get leave types for names
         leave_type_ids = list(set(a["holiday_status_id"][0] for a in allocations if a.get("holiday_status_id")))
