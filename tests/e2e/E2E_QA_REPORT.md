@@ -1,7 +1,7 @@
 # E2E QA Test Report - Odoo MCP Server (Comprehensive)
 
-**Report Date:** 2026-01-08
-**Test Environment:** Staging (https://odoo-mcp-server-55974118220.europe-west1.run.app/mcp)
+**Report Date:** 2026-01-10
+**Test Environment:** Staging (ODOO staging connector in Claude.ai)
 **Tester:** Claude Code E2E QA Manager
 **Test Method:** Claude.ai Chrome Integration with MCP tools
 **OAuth Client ID:** 360932891826-6b82gjn5igtfihefq5cf68i45iquhtr9.apps.googleusercontent.com
@@ -13,18 +13,22 @@
 
 This report documents comprehensive E2E testing of the Odoo MCP Server integration with Claude.ai, covering **62 test scenarios** across all employee self-service functions.
 
-### Overall Status: **IN PROGRESS**
+### Overall Status: **BLOCKED - CRITICAL PERFORMANCE ISSUES**
 
-⚠️ **Performance Issue Detected:** MCP server responses are significantly slow (30-60+ seconds per tool call). This is impacting test execution speed.
+🚨 **CRITICAL:** MCP server is experiencing severe performance degradation:
+- Tool calls taking 30-90+ seconds (expected: <5 seconds)
+- Intermittent connection errors occurring
+- Some tool calls timing out completely
+- Server appears to have cold start latency issues
 
-| Category | Total | Pass | Fail | Pending | Requires Staging |
-|----------|-------|------|------|---------|------------------|
-| Setup & Auth | 4 | 4 | 0 | 0 | 0 |
-| Profile & Organization | 12 | 2 | 0 | 10 | 0 |
-| Leave Management | 22 | 0 | 0 | 22 | 8 |
-| Documents | 12 | 0 | 0 | 12 | 0 |
-| Error Handling | 12 | 0 | 0 | 12 | 0 |
-| **TOTAL** | **62** | **6** | **0** | **56** | **8** |
+| Category | Total | Pass | Fail | Error/Timeout | Pending | Requires Staging |
+|----------|-------|------|------|---------------|---------|------------------|
+| Setup & Auth | 4 | 4 | 0 | 0 | 0 | 0 |
+| Profile & Organization | 12 | 2 | 0 | 2 | 8 | 0 |
+| Leave Management | 22 | 1 | 0 | 1 | 20 | 8 |
+| Documents | 12 | 0 | 0 | 1 | 11 | 0 |
+| Error Handling | 12 | 0 | 0 | 0 | 12 | 0 |
+| **TOTAL** | **62** | **7** | **0** | **4** | **51** | **8** |
 
 ---
 
@@ -192,13 +196,110 @@ This report documents comprehensive E2E testing of the Odoo MCP Server integrati
 - P02: Get My Manager - PASSED (returned Pavel Doležal info)
 - P03: Get My Team - TIMEOUT (server latency issue)
 
-**Next Steps:**
-- Investigate MCP server performance issues
-- Continue profile tests after server optimization
-- Proceed with leave and document tests
+---
+
+### Session 2 - 2026-01-10
+
+**Environment:**
+- Claude.ai with Haiku 4.5 (also tested with Opus 4.5)
+- ODOO staging connector configured in Claude.ai organization
+- Test user: jiri.manas@keboola.com
+
+**Pre-Test Setup Verification:**
+- ✅ Claude.ai login verified
+- ✅ ODOO staging connector found and connected
+- ✅ **23 MCP tools available** (exceeds expected 19+)
+
+**Tools Verified:**
+cancel_leave_request, count_records, create_record, delete_record, download_document, find_colleague, get_direct_reports, get_document_categories, get_document_details, get_my_documents, get_my_leave_balance, get_my_leave_requests, get_my_manager, get_my_profile, get_my_team, get_public_holidays, get_record, list_models, request_leave, search_records, update_my_contact, update_record, upload_identity_document
+
+**Test Results:**
+
+| Test ID | Test Name | Tool | Status | Response Time | Notes |
+|---------|-----------|------|--------|---------------|-------|
+| S04 | Verify Tools | - | ✅ PASS | <2s | 23 tools visible in connector config |
+| P01 | Get My Profile | get_my_profile | ✅ PASS | ~8s | Full profile: Jiri Manas, CTO, Leadership, jiri.manas@keboola.com, +420724253175, Manager: Pavel Doležal |
+| P02 | Get My Manager | get_my_manager | ⚠️ ERROR | 60s+ | Tool error with recovery - Claude provided cached manager info |
+| L01 | Get Leave Balance | get_my_leave_balance | ✅ PASS | ~8s | 25 days PTO remaining for 2026 |
+| L01 | Get Leave Balance (retry) | get_my_leave_balance | ❌ ERROR | - | "Odoo system returning error" - intermittent failure |
+| D01 | Document Categories | get_document_categories | ❌ TIMEOUT | 70s+ | Request never completed |
+
+**Critical Issues Observed:**
+
+1. **Severe Latency (P0 - Blocker)**
+   - Tool calls averaging 30-90+ seconds
+   - Multiple requests timing out completely
+   - "A bit longer, thanks for your patience..." message appearing frequently
+   - Impact: Testing cannot proceed efficiently
+
+2. **Intermittent Errors (P1 - High)**
+   - Same tool (get_my_leave_balance) succeeds sometimes, fails others
+   - Error message: "The Odoo system is returning an error when trying to fetch your leave balance"
+   - Suggests connection instability or resource contention
+
+3. **Tool Error Recovery (P2 - Medium)**
+   - get_my_manager showed error icon but Claude provided fallback answer
+   - This is good UX but indicates underlying tool issues
+
+4. **Health Endpoint (P2 - Medium)**
+   - Health check at documented URL returns 404
+   - URL may have changed or endpoint not configured
+
+**Performance Comparison:**
+
+| Test | Expected Time | Actual Time | Status |
+|------|---------------|-------------|--------|
+| get_my_profile | <3s | 8s | ⚠️ Slow |
+| get_my_leave_balance | <3s | 8s | ⚠️ Slow |
+| get_my_manager | <3s | 60s+ timeout | ❌ Failed |
+| get_document_categories | <3s | 70s+ timeout | ❌ Failed |
+
+**Recommendations:**
+
+1. **Immediate Actions:**
+   - Investigate Cloud Run cold start times
+   - Check Odoo connection pooling configuration
+   - Review server logs for timeout causes
+   - Consider increasing instance min-count to prevent cold starts
+
+2. **Before Next Test Session:**
+   - Fix latency issues (target: <5s per tool call)
+   - Verify health endpoint configuration
+   - Add connection health monitoring
+
+3. **Testing Blocked Until:**
+   - Performance stabilized at acceptable levels
+   - Intermittent errors resolved
+
+---
+
+## Appendix: Functional Test Results (When Tools Respond)
+
+When the MCP server responds successfully, the tools return correct data:
+
+### P01 - Get My Profile (PASSED)
+```
+Name: Jiri Manas
+Job Title: Chief Technology Officer (CTO)
+Department: Leadership
+Division: Operations
+Work Email: jiri.manas@keboola.com
+Mobile Phone: +420724253175
+Manager: Pavel Doležal
+Coach: Pavel Doležal
+```
+
+### L01 - Get Leave Balance (PASSED)
+```
+Leave Type: Paid Time Off
+Allocated: 25 days
+Taken: 0 days
+Remaining: 25 days
+Year: 2026
+```
 
 ---
 
 *Report initialized: 2026-01-04*
-*Last updated: 2026-01-08*
-*Status: In Progress - Performance issues affecting execution speed*
+*Last updated: 2026-01-10*
+*Status: BLOCKED - Critical performance issues preventing comprehensive testing*

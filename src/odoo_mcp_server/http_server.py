@@ -190,7 +190,13 @@ async def oauth_middleware(request: Request, call_next):
         "/authorize",
         "/token",
     ]
-    if request.url.path in skip_paths:
+    
+    # Normalize path (handle trailing slashes)
+    path = request.url.path
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+        
+    if path in skip_paths:
         return await call_next(request)
 
     # Extract token

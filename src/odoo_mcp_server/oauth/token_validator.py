@@ -400,8 +400,14 @@ class TokenValidator:
 
         # For JWT tokens, use sync validation (PyJWT is sync)
         # The cache check above ensures we don't repeat validation
+        # Offload CPU-bound validation to executor to avoid blocking event loop
+        import asyncio
+        from functools import partial
+        
         await self.fetch_jwks()
-        return self.validate(token)
+        
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(self.validate, token))
 
     def get_claims(self, token: str) -> dict[str, Any]:
         """

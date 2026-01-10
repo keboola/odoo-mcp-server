@@ -9,6 +9,7 @@ Performance: Includes in-memory caching to avoid repeated Odoo queries.
 
 import logging
 import time
+import asyncio
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -56,12 +57,14 @@ async def get_employee_for_user(
     """
     Map OAuth user to Odoo employee.
 
-    Tries multiple strategies in order:
-    1. Match by work_email in hr.employee
-    2. Match via res.users login (which links to hr.employee)
-    3. Match by odoo_employee_id claim (if present in token)
+    Tries multiple strategies in order, with parallel execution where possible:
+    1. Match by odoo_employee_id claim (if present)
+    2. Parallel search:
+       - Match by work_email in hr.employee
+       - Match via res.users login (which links to hr.employee)
+    3. Fuzzy match on name (last resort)
 
-    Performance: Uses caching to avoid repeated Odoo queries.
+    Performance: Uses caching and parallel Odoo queries.
 
     Args:
         oauth_claims: Decoded JWT claims from OAuth token
@@ -103,40 +106,51 @@ async def get_employee_for_user(
     if not user_email:
         raise EmployeeNotFoundError("No email in OAuth token to map to employee")
 
-    # Strategy 1: Match by work_email in hr.employee
-    employees = await odoo_client.search_read(
+    # Prepare parallel tasks for Strategy 1 and 2
+    task_email = odoo_client.search_read(
         model="hr.employee",
         domain=[["work_email", "=ilike", user_email]],
         fields=["id", "name", "work_email", "department_id"],
-        limit=2,  # Get 2 to detect duplicates
+        limit=2,
     )
 
-    if len(employees) > 1:
-        logger.warning(f"Multiple employees found for email {user_email}")
-        # Use first one but log warning
-        result = _normalize_employee(employees[0])
-        _cache_employee(user_email, result)
-        return result
-
-    if employees:
-        logger.info(f"Found employee by work_email: {employees[0]['name']}")
-        result = _normalize_employee(employees[0])
-        _cache_employee(user_email, result)
-        return result
-
-    # Strategy 2: Match via res.users (login -> employee_id)
-    users = await odoo_client.search_read(
+    task_user = odoo_client.search_read(
         model="res.users",
         domain=[["login", "=ilike", user_email]],
         fields=["id", "employee_id", "employee_ids"],
         limit=1,
     )
 
-    if users:
-        user = users[0]
+    # Execute parallel searches
+    results_email, results_user = await asyncio.gather(task_email, task_user)
+
+    # Strategy 1: Match by work_email in hr.employee
+    if len(results_email) > 1:
+        logger.warning(f"Multiple employees found for email {user_email}")
+        # Use first one but log warning
+        result = _normalize_employee(results_email[0])
+        _cache_employee(user_email, result)
+        return result
+
+    if results_email:
+        logger.info(f"Found employee by work_email: {results_email[0]['name']}")
+        result = _normalize_employee(results_email[0])
+        _cache_employee(user_email, result)
+        return result
+
+    # Strategy 2: Match via res.users (login -> employee_id)
+    if results_user:
+        user = results_user[0]
+        emp_id = None
+        
         # Check employee_id (single linked employee)
         if user.get("employee_id"):
             emp_id = user["employee_id"][0]
+        # Check employee_ids (multiple linked employees - rare)
+        elif user.get("employee_ids") and len(user["employee_ids"]) > 0:
+            emp_id = user["employee_ids"][0]
+
+        if emp_id:
             employees = await odoo_client.read(
                 model="hr.employee",
                 ids=[emp_id],
@@ -144,21 +158,6 @@ async def get_employee_for_user(
             )
             if employees:
                 logger.info(f"Found employee via res.users: {employees[0]['name']}")
-                result = _normalize_employee(employees[0])
-                _cache_employee(user_email, result)
-                return result
-
-        # Check employee_ids (multiple linked employees - rare)
-        if user.get("employee_ids") and len(user["employee_ids"]) > 0:
-            emp_id = user["employee_ids"][0]
-            employees = await odoo_client.read(
-                model="hr.employee",
-                ids=[emp_id],
-                fields=["id", "name", "work_email", "department_id"],
-            )
-            if employees:
-                emp_name = employees[0]["name"]
-                logger.info(f"Found employee via res.users employee_ids: {emp_name}")
                 result = _normalize_employee(employees[0])
                 _cache_employee(user_email, result)
                 return result
