@@ -74,20 +74,4 @@ docker-compose.override.yml
 
 # Playwright auth state (contains session cookies)
 .playwright-state/
-
-# Secrets and credentials
-*.json
-!pyproject.json
-odoo-crm-*.json
-
-# IDE/Editor configs
-.gemini/
-
-# Node modules (if any)
-node_modules/
-package*.json
-
-# Symlinks to docs
-agent.md
-claude.md
-gemini.md
+odoo-crm-461310-da59a67b4d56.json
