@@ -501,8 +501,8 @@ async def execute_employee_tool(
         # Query leave types with employee and date context
         # The context params make Odoo compute balances for the specific employee and date range
         leave_types = await odoo_client.execute(
-            model="hr.leave.type",
-            method="search_read",
+            "hr.leave.type",
+            "search_read",
             [["requires_allocation", "=", "yes"]],
             {
                 "fields": ["id", "name", "max_leaves", "leaves_taken", "virtual_remaining_leaves"],

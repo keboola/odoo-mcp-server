@@ -355,13 +355,15 @@ class TestEmployeeToolsWithMocking:
         """Test get_my_leave_balance tool with mocked client."""
         from odoo_mcp_server.tools.employee import execute_employee_tool
 
-        # Mock allocations that start in 2026
-        mock_odoo_client.search_read.return_value = [
-            {"id": 1, "holiday_status_id": [1, "Paid Time Off"], "number_of_days": 25, "leaves_taken": 0,
-             "date_from": "2026-01-01", "date_to": "2026-12-31"},
-        ]
-        mock_odoo_client.read.return_value = [
-            {"id": 1, "name": "Paid Time Off"},
+        # Mock hr.leave.type with native computed fields (new implementation)
+        mock_odoo_client.execute.return_value = [
+            {
+                "id": 1,
+                "name": "Paid Time Off",
+                "max_leaves": 25,
+                "leaves_taken": 3,
+                "virtual_remaining_leaves": 22,
+            },
         ]
 
         result = await execute_employee_tool(
@@ -374,18 +376,20 @@ class TestEmployeeToolsWithMocking:
         import json
         response = json.loads(result[0].text)
 
-        # Response format: {"year": ..., "balances": [...], "note": ...}
+        # Response format: {"year": ..., "balances": [...], "note": ..., "version": ...}
         assert response["year"] == 2026
         balances = response["balances"]
         assert len(balances) == 1
-        assert balances[0]["remaining"] == 25  # 25 - 0
-        assert balances[0]["valid_from"] == "2026-01-01"
-        assert balances[0]["valid_to"] == "2026-12-31"
+        assert balances[0]["leave_type"] == "Paid Time Off"
+        assert balances[0]["allocated"] == 25
+        assert balances[0]["taken"] == 3
+        assert balances[0]["remaining"] == 22
 
-        # Verify search_read was called with year filter
-        mock_odoo_client.search_read.assert_called()
-        call_args = mock_odoo_client.search_read.call_args
-        assert call_args[1]["model"] == "hr.leave.allocation"
+        # Verify execute was called on hr.leave.type model
+        mock_odoo_client.execute.assert_called()
+        call_args = mock_odoo_client.execute.call_args
+        assert call_args[0][0] == "hr.leave.type"
+        assert call_args[0][1] == "search_read"
 
 
 class TestOdooClientConfiguration:
