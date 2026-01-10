@@ -170,7 +170,10 @@ jobs:
 
       - name: Deploy to Cloud Run (Staging)
         run: |
-          gcloud run deploy odoo-mcp-server-staging \
+          # Deploy to the staging service (connected to staging Odoo instance)
+          # Staging URL: https://odoo-mcp-server-55974118220.europe-west1.run.app/mcp
+          # Production will be on keboola.com domain (separate deployment)
+          gcloud run deploy odoo-mcp-server \
             --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/odoo-mcp-server:${{ github.sha }} \
             --region europe-west1 \
             --platform managed \
@@ -181,6 +184,6 @@ jobs:
             --set-secrets "OAUTH_CLIENT_SECRET=oauth-client-secret:latest"
 
           # Ensure traffic is routed to latest revision
-          gcloud run services update-traffic odoo-mcp-server-staging \
+          gcloud run services update-traffic odoo-mcp-server \
             --to-latest \
             --region europe-west1
