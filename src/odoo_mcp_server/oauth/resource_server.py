@@ -41,18 +41,21 @@ def extract_user_context(claims: dict[str, Any]) -> dict[str, Any]:
     scope_string = claims.get("scope", "")
     scopes = scope_string.split() if scope_string else []
 
-    # For Google OAuth tokens without scope claim, grant default scopes
-    # Google tokens have 'iss' = 'https://accounts.google.com' and 'email_verified'
-    if not scopes and claims.get("iss") == "https://accounts.google.com":
+    # Check if this is a Google token
+    iss = claims.get("iss", "")
+    is_google = iss == "https://accounts.google.com" or iss == "accounts.google.com"
+
+    # For Google OAuth tokens, if Odoo scopes are missing, grant default scopes
+    # This handles both ID tokens (no scope claim) and Access tokens (standard scopes only)
+    has_odoo_scopes = any(s.startswith("odoo.") for s in scopes)
+
+    if is_google and not has_odoo_scopes:
         email = claims.get("email", "")
         email_verified = claims.get("email_verified", False)
 
         if email_verified and email:
             # Grant default employee self-service scopes for verified Google users
-            scopes = [
-                "openid",
-                "email",
-                "profile",
+            default_scopes = [
                 "odoo.hr.profile",
                 "odoo.hr.team",
                 "odoo.hr.directory",
@@ -61,14 +64,23 @@ def extract_user_context(claims: dict[str, Any]) -> dict[str, Any]:
                 "odoo.documents.read",
                 "odoo.read",
             ]
+
+            # Add to existing scopes (preserving openid, etc.)
+            for scope in default_scopes:
+                if scope not in scopes:
+                    scopes.append(scope)
+
             logger.info(f"Google OAuth: granted default scopes for {email}")
 
             # Grant additional scopes for @keboola.com domain (internal users)
             if email.endswith("@keboola.com"):
-                scopes.extend([
+                admin_scopes = [
                     "odoo.documents.write",
                     "odoo.write",
-                ])
+                ]
+                for scope in admin_scopes:
+                    if scope not in scopes:
+                        scopes.append(scope)
                 logger.info(f"Google OAuth: granted extended scopes for internal user {email}")
 
     return {
