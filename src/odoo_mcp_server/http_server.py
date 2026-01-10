@@ -9,10 +9,11 @@ import hashlib
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from .config import OAUTH_SCOPES, TOOL_SCOPE_REQUIREMENTS, Settings, check_scope_access
@@ -178,7 +179,7 @@ async def security_headers_middleware(request: Request, call_next):
 async def oauth_middleware(request: Request, call_next):
     """OAuth authentication middleware."""
     # Skip auth for certain paths
-    skip_paths = ["/health", "/.well-known/oauth-protected-resource", "/callback", "/"]
+    skip_paths = ["/health", "/.well-known/oauth-protected-resource", "/callback", "/", "/authorize"]
     if request.url.path in skip_paths:
         return await call_next(request)
 
@@ -245,6 +246,12 @@ async def health_check():
     return {"status": "healthy", "service": "odoo-mcp-server", "code_version": CODE_VERSION}
 
 
+@app.get("/")
+async def root():
+    """Root endpoint for service discovery."""
+    return {"status": "ok", "service": "odoo-mcp-server"}
+
+
 @app.get("/.well-known/oauth-protected-resource")
 async def oauth_protected_resource_metadata():
     """RFC 9728 Protected Resource Metadata endpoint."""
@@ -252,6 +259,38 @@ async def oauth_protected_resource_metadata():
         raise HTTPException(status_code=503, detail="OAuth not configured")
 
     return resource_server.metadata.to_dict()
+
+
+@app.get("/authorize")
+async def oauth_authorize(
+    response_type: str = "code",
+    client_id: str | None = None,
+    redirect_uri: str | None = None,
+    scope: str | None = None,
+    state: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
+):
+    """Redirect OAuth authorization to Google."""
+    params = {
+        "response_type": response_type,
+        "client_id": settings.oauth_client_id,
+        "redirect_uri": redirect_uri or "https://claude.ai/api/mcp/auth_callback",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+    }
+    if code_challenge:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = code_challenge_method or "S256"
+
+    # Filter None values
+    params = {k: v for k, v in params.items() if v is not None}
+
+    return RedirectResponse(
+        url=f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}",
+        status_code=302,
+    )
 
 
 @app.get("/callback")
