@@ -504,14 +504,12 @@ async def execute_employee_tool(
             "hr.leave.type",
             "search_read",
             [["requires_allocation", "=", "yes"]],
-            {
-                "fields": ["id", "name", "max_leaves", "leaves_taken", "virtual_remaining_leaves"],
-                "context": {
-                    "employee_id": employee_id,
-                    "default_employee_id": employee_id,
-                    "default_date_from": year_start,
-                    "default_date_to": year_end,
-                },
+            fields=["id", "name", "max_leaves", "leaves_taken", "virtual_remaining_leaves"],
+            context={
+                "employee_id": employee_id,
+                "default_employee_id": employee_id,
+                "default_date_from": year_start,
+                "default_date_to": year_end,
             },
         )
 
