@@ -170,8 +170,8 @@ jobs:
 
       - name: Deploy to Cloud Run (Staging)
         run: |
-          # Deploy to the staging service (connected to staging Odoo instance)
-          # Staging URL: https://odoo-mcp-server-55974118220.europe-west1.run.app/mcp
+          # Deploy to staging service in odoo-crm-461310 project
+          # Staging URL: https://odoo-mcp-server-574793647362.europe-west1.run.app/mcp
           # Production will be on keboola.com domain (separate deployment)
           gcloud run deploy odoo-mcp-server \
             --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/odoo-mcp-server:${{ github.sha }} \
@@ -180,6 +180,12 @@ jobs:
             --allow-unauthenticated \
             --set-env-vars "ODOO_URL=${{ secrets.STAGING_ODOO_URL }}" \
             --set-env-vars "ODOO_DB=${{ secrets.STAGING_ODOO_DB }}" \
+            --set-env-vars "OAUTH_PROVIDER=google" \
+            --set-env-vars "OAUTH_CLIENT_ID=${{ secrets.OAUTH_CLIENT_ID }}" \
+            --set-env-vars "OAUTH_AUTHORIZATION_SERVER=https://accounts.google.com" \
+            --set-env-vars "OAUTH_ISSUER=https://accounts.google.com" \
+            --set-env-vars "OAUTH_RESOURCE_IDENTIFIER=https://odoo-mcp-server-574793647362.europe-west1.run.app" \
+            --set-env-vars "OAUTH_REDIRECT_URI=https://odoo-mcp-server-574793647362.europe-west1.run.app/callback" \
             --set-secrets "ODOO_API_KEY=odoo-api-key:latest" \
             --set-secrets "OAUTH_CLIENT_SECRET=oauth-client-secret:latest"
 
